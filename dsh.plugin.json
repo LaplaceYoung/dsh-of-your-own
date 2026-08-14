@@ -1,0 +1,8 @@
+{
+  "id": "dsh-of-your-own",
+  "version": "0.1.0",
+  "main": "lib/index.js",
+  "description": "/fuck — scan your Claude Code & Codex conversation history in parallel, analyze preferences and tool habits, migrate them into DSH as a persisted profile that stays remembered.",
+  "engines": { "dsh": ">=0.0.1" },
+  "contributes": { "commands": ["fuck"], "tools": ["my_profile", "my_commands"], "skills": [] }
+}

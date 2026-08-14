@@ -1,0 +1,13 @@
+# dsh-of-your-own bundle patch: mounts the plugin into any composition.
+# Apply via `cordis.patch.yml` (dsh.plugin.json `dsh.bundle.patch`) or by
+# appending this entry to your cordis.yml.
+
+- insert:
+    - id: dsh-of-your-own
+      name: '@dsh-external/dsh-of-your-own'
+      # config:
+      #   provider: deepseek-official   # LLM provider for preference synthesis
+      #   model: deepseek-v4-flash      # LLM model for preference synthesis
+      #   maxFilesPerSource: 50         # newest transcripts scanned per harness
+      #   maxBytesPerFile: 524288       # per-file read cap
+      #   profilePath: ~/.dsh/of-your-own/profile.json
