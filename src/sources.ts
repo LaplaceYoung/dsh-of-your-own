@@ -1,10 +1,15 @@
 /**
- * Transcript source adapters — where the user's other agents keep their logs.
+ * Source adapters — where the user's other agents keep their stuff.
  *
- * Two adapters ship: Claude Code (`~/.claude/projects/<cwd>/<session>.jsonl`)
- * and Codex (`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`). Each adapter is
- * schema-tolerant: unknown line shapes are skipped, never fatal. All parsing
- * functions are pure so unit tests feed them fixture lines directly.
+ * Two kinds of evidence:
+ *
+ *   1. Transcripts (behavior): Claude Code, Codex, pi/omp session JSONLs,
+ *      plus Claude Code's global history.jsonl (slash-command gold mine).
+ *   2. Native memory files (explicit preferences): CLAUDE.md, Codex
+ *      AGENTS.md, GEMINI.md, Cursor `.mdc` rules and agent markdown.
+ *
+ * Every parser is schema-tolerant: unknown line shapes are skipped, never
+ * fatal. All parsing functions are pure so unit tests feed them fixtures.
  *
  * @module dsh-of-your-own/sources
  */
@@ -20,9 +25,21 @@ export interface FsLike {
   remove(path: string): Promise<void>
 }
 
+/** A native memory file found in another harness's home. */
+export interface MemoryFile {
+  /** Which harness owns it: 'claude-code' | 'codex' | 'gemini-cli' | 'cursor'. */
+  source: string
+  /** Human-readable name: 'CLAUDE.md', 'rules/cursor.mdc', … */
+  name: string
+  /** Absolute path it was read from. */
+  path: string
+  /** Full content (bounded by scanMemoryFiles). */
+  content: string
+}
+
 /** Raw behavioral evidence extracted from one harness's transcripts. */
 export interface SourceEvidence {
-  /** Adapter id: 'claude-code' | 'codex' | custom. */
+  /** Adapter id: 'claude-code' | 'codex' | 'pi' | 'omp' | 'claude-history'. */
   source: string
   /** User prompts, oldest first (bounded by maxPrompts). */
   prompts: string[]
@@ -52,11 +69,18 @@ export const defaultLimits: ScanLimits = {
   maxPrompts: 500,
 }
 
-/** Resolve the default transcript roots for a home directory. */
+/**
+ * Resolve the default transcript roots for a home directory. Only
+ * transcript-producing sources appear here; memory-file sources are
+ * discovered separately by scanMemoryFiles.
+ */
 export function resolveDefaultRoots(home: string): Record<string, string> {
   return {
     'claude-code': join(home, '.claude', 'projects'),
     codex: join(home, '.codex', 'sessions'),
+    pi: join(home, '.pi', 'agent', 'sessions'),
+    omp: join(home, '.omp', 'agent', 'sessions'),
+    'claude-history': join(home, '.claude', 'history.jsonl'),
   }
 }
 
@@ -70,13 +94,6 @@ export function extractSlashCommand(prompt: string): string | undefined {
   if (!first || !first.startsWith('/')) return undefined
   const m = /^\/([A-Za-z][A-Za-z0-9_-]{0,31})$/.exec(first)
   return m ? `/${m[1]}` : undefined
-}
-
-/** Detect whether a prompt is predominantly CJK (zh/ja/ko) or latin. */
-export function detectLanguage(prompt: string): 'zh' | 'en' {
-  const cjk = (prompt.match(/[\u3000-\u303f\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af]/g) ?? []).length
-  const latin = (prompt.match(/[A-Za-z]/g) ?? []).length
-  return cjk > latin ? 'zh' : 'en'
 }
 
 /** Evidence parsed from one Claude Code JSONL line (pure). */
@@ -152,6 +169,77 @@ export function parseCodexLine(line: string): { prompts: string[]; tools: string
   return out
 }
 
+/**
+ * Evidence parsed from one pi/omp session JSONL line (pure). pi and omp
+ * share the same engine and format: `{"type":"session",cwd}`,
+ * `{"type":"message","message":{"role":"user","content":[{"type":"text"}]}}`,
+ * assistant `toolCall` blocks.
+ */
+export function parsePiLine(line: string): { prompts: string[]; tools: string[]; cwd?: string } {
+  let entry: Record<string, unknown>
+  try {
+    entry = JSON.parse(line) as Record<string, unknown>
+  } catch {
+    return { prompts: [], tools: [] }
+  }
+  const out = { prompts: [] as string[], tools: [] as string[], cwd: undefined as string | undefined }
+
+  if (entry.type === 'session' && typeof entry.cwd === 'string') {
+    out.cwd = entry.cwd
+  }
+
+  if (entry.type === 'message') {
+    const msg = entry.message as { role?: string; content?: unknown } | undefined
+    if (!msg) return out
+    const content = msg.content
+    const items = Array.isArray(content)
+      ? content
+      : typeof content === 'string'
+        ? [{ type: 'text', text: content }]
+        : []
+    if (msg.role === 'user') {
+      for (const item of items) {
+        const c = item as { type?: string; text?: string }
+        if (c?.type === 'text' && typeof c.text === 'string' && c.text.trim()) {
+          out.prompts.push(c.text)
+        }
+      }
+    } else if (msg.role === 'assistant') {
+      for (const item of items) {
+        const c = item as { type?: string; name?: string }
+        if (c?.type === 'toolCall' && typeof c.name === 'string') out.tools.push(c.name)
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * Evidence parsed from one Claude Code history.jsonl line (pure). This is
+ * the global prompt log: `{"display": "/model", "project": "/path"}`.
+ */
+export function parseClaudeHistoryLine(line: string): { prompts: string[]; tools: string[]; cwd?: string } {
+  let entry: Record<string, unknown>
+  try {
+    entry = JSON.parse(line) as Record<string, unknown>
+  } catch {
+    return { prompts: [], tools: [] }
+  }
+  const out = { prompts: [] as string[], tools: [] as string[], cwd: undefined as string | undefined }
+  if (typeof entry.project === 'string') out.cwd = entry.project
+  if (typeof entry.display === 'string' && entry.display.trim()) out.prompts.push(entry.display)
+  return out
+}
+
+/** The shipped parser table: adapter id → line parser. */
+export const defaultParsers: Record<string, (line: string) => { prompts: string[]; tools: string[]; cwd?: string }> = {
+  'claude-code': parseClaudeLine,
+  codex: parseCodexLine,
+  pi: parsePiLine,
+  omp: parsePiLine,
+  'claude-history': parseClaudeHistoryLine,
+}
+
 /** Recursively collect `.jsonl` files under a root (newest-mtime first). */
 export async function collectTranscriptFiles(fs: FsLike, root: string): Promise<string[]> {
   const found: { path: string; mtimeMs: number }[] = []
@@ -206,9 +294,9 @@ async function scanFile(
 }
 
 /**
- * Scan all configured sources. Sources run in parallel (Promise.all), and
- * each source reads its transcript files in parallel — the "并行去读"
- * contract the plugin is named for.
+ * Scan all configured transcript sources in parallel — across sources and
+ * across files within each source. A root that resolves to a single file
+ * (claude-history) is scanned directly instead of walked.
  */
 export async function scanSources(
   fs: FsLike,
@@ -218,7 +306,11 @@ export async function scanSources(
 ): Promise<SourceEvidence[]> {
   const names = Object.keys(roots).filter(n => parsers[n])
   const results = await Promise.all(names.map(async (source): Promise<SourceEvidence> => {
-    const files = (await collectTranscriptFiles(fs, roots[source])).slice(0, limits.maxFilesPerSource)
+    const root = roots[source]
+    const isFile = root.endsWith('.jsonl')
+    const files = isFile
+      ? (await fs.exists(root) ? [root] : [])
+      : (await collectTranscriptFiles(fs, root)).slice(0, limits.maxFilesPerSource)
     const perFile = await Promise.all(files.map(f => scanFile(fs, f, parsers[source], limits)))
     const evidence: SourceEvidence = {
       source,
@@ -240,8 +332,72 @@ export async function scanSources(
   return results.filter(e => e.filesScanned > 0 || e.prompts.length > 0 || e.toolCalls.length > 0)
 }
 
-/** The shipped parser table: adapter id → line parser. */
-export const defaultParsers: Record<string, (line: string) => { prompts: string[]; tools: string[]; cwd?: string }> = {
-  'claude-code': parseClaudeLine,
-  codex: parseCodexLine,
+/** Strip markdown/frontmatter fences a rule file wraps its body in. */
+export function cleanMemoryContent(content: string): string {
+  let text = content.trim()
+  // Cursor .mdc frontmatter
+  if (text.startsWith('---')) {
+    const end = text.indexOf('\n---', 3)
+    if (end > 0) text = text.slice(end + 4).trim()
+  }
+  return text
+}
+
+/** One well-known memory file location. */
+export interface MemoryLocation {
+  source: string
+  path: string
+  name: string
+}
+
+/** The shipped memory-file discovery table (home → locations). */
+export function resolveMemoryLocations(home: string): MemoryLocation[] {
+  return [
+    { source: 'claude-code', path: join(home, '.claude', 'CLAUDE.md'), name: 'CLAUDE.md' },
+    { source: 'codex', path: join(home, '.codex', 'AGENTS.md'), name: 'AGENTS.md' },
+    { source: 'gemini-cli', path: join(home, '.gemini', 'GEMINI.md'), name: 'GEMINI.md' },
+  ]
+}
+
+/**
+ * Discover native memory files: the per-harness instruction files plus
+ * Cursor's global `.mdc` rules and agent markdown. Each content is bounded
+ * by maxMemoryChars. Missing files are silently skipped.
+ */
+export async function scanMemoryFiles(
+  fs: FsLike,
+  home: string,
+  maxMemoryChars = 8192,
+): Promise<MemoryFile[]> {
+  const found: MemoryFile[] = []
+  const candidates: MemoryLocation[] = [...resolveMemoryLocations(home)]
+
+  // Cursor global rules + agents (directory-based, optional)
+  const cursorDirs: { dir: string; source: string; prefix: string; ext: string }[] = [
+    { dir: join(home, '.cursor', 'rules'), source: 'cursor', prefix: 'rules/', ext: '.mdc' },
+    { dir: join(home, '.cursor', 'agents'), source: 'cursor', prefix: 'agents/', ext: '.md' },
+  ]
+  for (const { dir, source, prefix, ext } of cursorDirs) {
+    let entries: { name: string; isDirectory: boolean }[] = []
+    try {
+      entries = await fs.listDir(dir)
+    } catch {
+      continue
+    }
+    for (const e of entries) {
+      if (e.isDirectory || !e.name.endsWith(ext)) continue
+      candidates.push({ source, path: join(dir, e.name), name: `${prefix}${e.name}` })
+    }
+  }
+
+  await Promise.all(candidates.map(async (loc) => {
+    try {
+      if (!(await fs.exists(loc.path))) return
+      let content = await fs.readText(loc.path)
+      if (content.length > maxMemoryChars) content = `${content.slice(0, maxMemoryChars)}…`
+      const cleaned = cleanMemoryContent(content)
+      if (cleaned) found.push({ source: loc.source, name: loc.name, path: loc.path, content: cleaned })
+    } catch { /* unreadable → skip */ }
+  }))
+  return found.sort((a, b) => a.source.localeCompare(b.source) || a.name.localeCompare(b.name))
 }

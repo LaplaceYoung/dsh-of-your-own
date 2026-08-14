@@ -1,12 +1,19 @@
 /**
  * dsh-of-your-own — make DSH remember the user the other harnesses taught.
  *
- * One slash command, `/fuck`, scans the user's Claude Code and Codex
- * conversation history **in parallel**, analyzes preferences and tool/command
- * habits, persists a profile to `~/.dsh/of-your-own/`, migrates observed
- * slash commands as stub artifacts, and injects the learned preferences into
- * the system prompt — including on every future boot (profile reloaded at
- * registration), so the agent keeps remembering.
+ * One slash command, `/fuck`, scans the user's other agents in parallel —
+ * Claude Code, Codex, pi/omp transcripts, Claude Code's global history, plus
+ * the native memory files (CLAUDE.md, Codex AGENTS.md, GEMINI.md, Cursor
+ * rules) — analyzes preferences and tool/command habits, then migrates them
+ * **natively**:
+ *
+ *   1. Writes a managed block into `$DSH_HOME/AGENTS.md` — the file DSH's
+ *      workspace-context auto-loads on every session, plugin or not.
+ *   2. Persists the full profile to `~/.dsh/of-your-own/profile.json`.
+ *   3. Injects the learned preferences into `ctx.systemPrompt.context()`.
+ *
+ * Re-runs upsert the managed block; user-authored content outside the block
+ * is never touched.
  *
  * Seams used (all documented DSH extension points, no skeleton edits):
  *   - `ctx.commands`   — registers `/fuck`
@@ -25,8 +32,10 @@ import {
   defaultLimits,
   defaultParsers,
   resolveDefaultRoots,
+  scanMemoryFiles,
   scanSources,
   type FsLike as SourcesFs,
+  type MemoryFile,
   type ScanLimits,
 } from './sources.js'
 import {
@@ -44,6 +53,7 @@ import {
   loadProfile,
   nodeFsFallback,
   saveProfile,
+  writeNativeAgentsMd,
   type FsLike as StoreFs,
   type MigratedCommand,
 } from './store.js'
@@ -57,9 +67,13 @@ export const inject = ['commands', 'tools']
 export interface Config {
   /** Where the profile and migrated commands persist. */
   storeDir?: string
-  /** Transcript roots per source id; defaults to ~/.claude/projects + ~/.codex/sessions. */
+  /** DSH's native user-global instruction file (auto-loaded every session). */
+  agentsMdPath?: string
+  /** Transcript roots per source id; defaults cover claude/codex/pi/omp. */
   roots?: Record<string, string>
-  /** Sources disabled by name (e.g. ['codex']). */
+  /** Home dir for memory-file discovery (defaults to homedir()). */
+  home?: string
+  /** Sources disabled by name (e.g. ['omp']). */
   disabledSources?: string[]
   /** LLM provider/model for preference synthesis; unset = deterministic fallback. */
   provider?: string
@@ -68,6 +82,8 @@ export interface Config {
   maxFilesPerSource?: number
   maxBytesPerFile?: number
   maxPrompts?: number
+  /** Per-memory-file content cap. */
+  maxMemoryChars?: number
   /** Order of the learned-preferences section in the system prompt. */
   sectionOrder?: number
 }
@@ -91,17 +107,23 @@ export interface SystemPromptLike {
   context?(entry: { name: string; order: number; text: string }): () => void
 }
 
+/** Combined fs contract: sources and store use the same seam shape. */
+export type FS = SourcesFs & StoreFs
+
 /** Full run result, exposed for tests and `/fuck` reporting. */
 export interface MigrationResult {
   profile: UserProfile
   profilePath: string
   commandPaths: string[]
+  agentsMdPath: string
+  memoryFiles: MemoryFile[]
   stats: SourceStats[]
 }
 
 /**
- * Run one full migration: parallel scan → stats → optional LLM prose →
- * persisted profile + command stubs. Pure orchestration over the seams.
+ * Run one full migration: parallel transcript + memory-file scan → stats →
+ * optional LLM prose → native AGENTS.md block + persisted profile + command
+ * stubs. Pure orchestration over the seams.
  */
 export async function runMigration(
   fs: FS,
@@ -111,17 +133,24 @@ export async function runMigration(
     provider?: string
     model?: string
     storeDir: string
+    agentsMdPath: string
+    home: string
+    maxMemoryChars?: number
     llm?: LlmLike
   },
 ): Promise<MigrationResult> {
-  const evidence = await scanSources(fs as unknown as SourcesFs, options.roots, defaultParsers, options.limits)
+  // Parallel: transcript sources + native memory files.
+  const [evidence, memoryFiles] = await Promise.all([
+    scanSources(fs as unknown as SourcesFs, options.roots, defaultParsers, options.limits),
+    scanMemoryFiles(fs as unknown as SourcesFs, options.home, options.maxMemoryChars ?? 8192),
+  ])
   const stats = evidence.map(e => analyzeSource(e))
-  const digest = renderStatsDigest(stats)
+  const digest = renderStatsDigest(stats, memoryFiles)
   const zh = stats.filter(s => s.language === 'zh').reduce((n, s) => n + s.promptCount, 0)
   const total = Math.max(1, stats.reduce((n, s) => n + s.promptCount, 0))
   const language = zh * 2 > total ? 'zh' : 'en'
   let preferences = ''
-  if (options.llm && stats.length > 0) {
+  if (options.llm && (stats.length > 0 || memoryFiles.length > 0)) {
     try {
       preferences = await synthesizePreferences(options.llm, digest, language, {
         provider: options.provider,
@@ -131,7 +160,7 @@ export async function runMigration(
       preferences = '' // fall back to the deterministic template
     }
   }
-  const profile = buildProfile(stats, preferences)
+  const profile = buildProfile(stats, preferences, memoryFiles)
 
   // Migrate observed slash commands as stub artifacts (top 20, deduped).
   const seen = new Set<string>()
@@ -144,48 +173,61 @@ export async function runMigration(
     }
   }
   const { profilePath, commandPaths } = await saveProfile(fs as unknown as StoreFs, options.storeDir, profile, commands)
-  return { profile, profilePath, commandPaths, stats }
+
+  // The native landing zone: DSH auto-loads $DSH_HOME/AGENTS.md every
+  // session, so the user's preferences survive even without this plugin.
+  const agentsMdPath = await writeNativeAgentsMd(fs as unknown as StoreFs, options.agentsMdPath, renderProfileSection(profile))
+
+  return { profile, profilePath, commandPaths, agentsMdPath, memoryFiles, stats }
 }
 
 /** Render the `/fuck` outcome as user-facing text. */
 export function renderMigrationReport(result: MigrationResult, language: 'zh' | 'en'): string {
   const { profile } = result
   const lines: string[] = []
+  const sourcesLine = profile.sources.map(s => `${s.source}(${s.filesScanned} 个会话)`).join('、')
+  const msgCount = profile.sources.reduce((n, s) => n + s.promptCount, 0)
   if (language === 'zh') {
     lines.push('## 迁移完成', '')
-    lines.push(`扫描了 ${profile.sources.map(s => `${s.source}(${s.filesScanned} 个会话)`).join('、')}，共 ${profile.sources.reduce((n, s) => n + s.promptCount, 0)} 条用户消息。`)
+    lines.push(`扫描了 ${sourcesLine}，共 ${msgCount} 条用户消息。`)
+    if (result.memoryFiles.length) {
+      lines.push(`读取了 ${result.memoryFiles.length} 份原生记忆文件：${result.memoryFiles.map(m => `${m.source}/${m.name}`).join('、')}`)
+    }
     lines.push('')
     lines.push('**学到的偏好**', '', profile.preferences, '')
     if (profile.toolHabits.length) lines.push(`工具习惯: ${profile.toolHabits.slice(0, 8).map(t => `${t.name}×${t.count}`).join(', ')}`)
     if (profile.migratedCommands.length) lines.push(`已迁移命令: ${profile.migratedCommands.join(', ')}`)
-    lines.push('', `档案: ${result.profilePath}`, '这些偏好已注入系统提示词，之后的每次会话都会记得。')
+    lines.push('', `档案: ${result.profilePath}`, `原生注入: ${result.agentsMdPath}（DSH 每次会话自动加载）`, '之后的每次会话都会记得你。')
   } else {
     lines.push('## Migration complete', '')
-    lines.push(`Scanned ${profile.sources.map(s => `${s.source} (${s.filesScanned} sessions)`).join(', ')} — ${profile.sources.reduce((n, s) => n + s.promptCount, 0)} user messages.`)
+    lines.push(`Scanned ${profile.sources.map(s => `${s.source} (${s.filesScanned} sessions)`).join(', ')} — ${msgCount} user messages.`)
+    if (result.memoryFiles.length) {
+      lines.push(`Read ${result.memoryFiles.length} native memory file(s): ${result.memoryFiles.map(m => `${m.source}/${m.name}`).join(', ')}`)
+    }
     lines.push('')
     lines.push('**Learned preferences**', '', profile.preferences, '')
     if (profile.toolHabits.length) lines.push(`Tool habits: ${profile.toolHabits.slice(0, 8).map(t => `${t.name}×${t.count}`).join(', ')}`)
     if (profile.migratedCommands.length) lines.push(`Migrated commands: ${profile.migratedCommands.join(', ')}`)
-    lines.push('', `Profile: ${result.profilePath}`, 'Injected into the system prompt — future sessions will remember this.')
+    lines.push('', `Profile: ${result.profilePath}`, `Native: ${result.agentsMdPath} (DSH auto-loads this every session)`, 'Future sessions will remember you.')
   }
   return lines.join('\n')
 }
-
-/** Combined fs contract: both the sources and store modules use the same seam shape. */
-type FS = SourcesFs & StoreFs
 
 export function apply(ctx: Context, config: Config = {}) {
   ctx.effect(() => {
     const commands = ctx.get('commands') as CommandsService
     const tools = ctx.get('tools') as ToolsService
     const systemPrompt = ctx.get('systemPrompt') as SystemPromptLike | undefined
-    const storeDir = config.storeDir ?? join(homedir(), '.dsh', 'of-your-own')
+    const home = config.home ?? homedir()
+    const dshHome = process.env.DSH_HOME ?? join(home, '.dsh')
+    const storeDir = config.storeDir ?? join(dshHome, 'of-your-own')
+    const agentsMdPath = config.agentsMdPath ?? join(dshHome, 'AGENTS.md')
     const limits: ScanLimits = {
       maxFilesPerSource: config.maxFilesPerSource ?? defaultLimits.maxFilesPerSource,
       maxBytesPerFile: config.maxBytesPerFile ?? defaultLimits.maxBytesPerFile,
       maxPrompts: config.maxPrompts ?? defaultLimits.maxPrompts,
     }
-    const roots = config.roots ?? resolveDefaultRoots(homedir())
+    const roots = config.roots ?? resolveDefaultRoots(home)
     const enabled: Record<string, string> = {}
     for (const [id, root] of Object.entries(roots)) {
       if (!(config.disabledSources ?? []).includes(id)) enabled[id] = root
@@ -193,7 +235,7 @@ export function apply(ctx: Context, config: Config = {}) {
     const disposers: (() => void)[] = []
     const fs = (): FS => ((ctx.get('fs') as FS | undefined) ?? nodeFsFallback() as FS)
 
-    // --- remember on boot: re-inject the persisted profile -----------------
+    // --- remember on demand: inject the profile into the prompt ------------
     let injectProfile = (profile: UserProfile): void => {
       void profile
     }
@@ -217,6 +259,9 @@ export function apply(ctx: Context, config: Config = {}) {
         provider: config.provider,
         model: config.model,
         storeDir,
+        agentsMdPath,
+        home,
+        maxMemoryChars: config.maxMemoryChars,
         llm: ctx.get('llm') as LlmLike | undefined,
       }).finally(() => { running = undefined })
       return running
@@ -224,12 +269,12 @@ export function apply(ctx: Context, config: Config = {}) {
 
     disposers.push(commands.register({
       name: 'fuck',
-      description: 'Read your Claude Code & Codex history in parallel, analyze your habits, and migrate them into DSH so this agent remembers you.',
+      description: 'Read your Claude Code, Codex, pi/omp history and native memory files in parallel, analyze your habits, and migrate them natively into DSH so it remembers you.',
       handler: async () => {
         try {
           const result = await run()
-          if (result.profile.sources.length === 0) {
-            return { kind: 'success', text: `No transcript history found under ${Object.values(enabled).join(', ')}. Run other agents first, then retry.` }
+          if (result.profile.sources.length === 0 && result.memoryFiles.length === 0) {
+            return { kind: 'success', text: `No transcript history or memory files found under ${Object.values(enabled).join(', ')} or ${home}. Run other agents first, then retry.` }
           }
           injectProfile(result.profile)
           return { kind: 'success', text: renderMigrationReport(result, result.profile.language) }

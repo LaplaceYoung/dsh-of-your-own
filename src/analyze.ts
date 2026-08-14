@@ -9,8 +9,7 @@
  * @module dsh-of-your-own/analyze
  */
 
-import type { SourceEvidence } from './sources.js'
-
+import type { MemoryFile, SourceEvidence } from './sources.js'
 /** One frequency entry. */
 export interface FreqEntry {
   name: string
@@ -88,7 +87,7 @@ export function analyzeSource(evidence: SourceEvidence, opts: AnalyzeOptions = {
     source: evidence.source,
     filesScanned: evidence.filesScanned,
     promptCount: evidence.prompts.length,
-    topTools: frequency(evidence.toolCalls).slice(0, topN),
+    topTools: frequency(evidence.toolCalls.map(t => t.toLowerCase())).slice(0, topN),
     topSlashCommands: frequency(evidence.slashCommands).slice(0, topN),
     topCwds: frequency(evidence.cwds).slice(0, 5),
     language: dominantLanguageOfPrompts(evidence.prompts),
@@ -112,10 +111,12 @@ export interface UserProfile {
   preferences: string
   /** Commands the user actually used elsewhere — candidates for migration. */
   migratedCommands: string[]
+  /** Native memory files found in other harness homes (source + name). */
+  memoryFiles: { source: string; name: string }[]
 }
 
 /** Render a deterministic digest of the stats (no LLM needed). */
-export function renderStatsDigest(stats: readonly SourceStats[]): string {
+export function renderStatsDigest(stats: readonly SourceStats[], memoryFiles: readonly MemoryFile[] = []): string {
   const lines: string[] = []
   for (const s of stats) {
     lines.push(`## ${s.source} (${s.filesScanned} files, ${s.promptCount} prompts, lang=${s.language})`)
@@ -129,6 +130,12 @@ export function renderStatsDigest(stats: readonly SourceStats[]): string {
       lines.push('samples:', ...s.samples.map(p => `  - ${p}`))
     }
     lines.push('')
+  }
+  if (memoryFiles.length) {
+    lines.push('## native memory files', '')
+    for (const m of memoryFiles) {
+      lines.push(`### ${m.source}/${m.name}`, '', m.content, '')
+    }
   }
   return lines.join('\n')
 }
@@ -191,6 +198,7 @@ export async function synthesizePreferences(
 export function buildProfile(
   stats: readonly SourceStats[],
   preferences: string,
+  memoryFiles: readonly MemoryFile[] = [],
   generatedAt: string = new Date().toISOString(),
 ): UserProfile {
   const toolHabits = frequency(stats.flatMap(s => s.topTools.flatMap(t => Array(t.count).fill(t.name) as string[])))
@@ -206,6 +214,7 @@ export function buildProfile(
     language: zhVotes * 2 > total ? 'zh' : 'en',
     preferences: preferences || buildPreferenceFallback(stats),
     migratedCommands: slashHabits.map(s => s.name),
+    memoryFiles: memoryFiles.map(m => ({ source: m.source, name: m.name })),
   }
 }
 

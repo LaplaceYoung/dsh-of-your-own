@@ -48,7 +48,7 @@ describe('analyze: analyzeSource', () => {
     expect(stats.source).toBe('claude-code')
     expect(stats.filesScanned).toBe(3)
     expect(stats.promptCount).toBe(5)
-    expect(stats.topTools[0]).toEqual({ name: 'Read', count: 3 })
+    expect(stats.topTools[0]).toEqual({ name: 'read', count: 3 })
     expect(stats.topSlashCommands[0]).toEqual({ name: '/review', count: 2 })
     expect(stats.topCwds[0]).toEqual({ name: '/p1', count: 2 })
     expect(stats.language).toBe('zh')
@@ -65,7 +65,7 @@ describe('analyze: analyzeSource', () => {
   it('renders a digest containing tools and slash lines', () => {
     const digest = renderStatsDigest([analyzeSource(evidence())])
     expect(digest).toContain('## claude-code (3 files, 5 prompts, lang=zh)')
-    expect(digest).toContain('Read×3')
+    expect(digest).toContain('read×3')
     expect(digest).toContain('/review×2')
   })
 })
@@ -114,10 +114,10 @@ describe('analyze: profile assembly', () => {
       cwds: ['/p3'],
       filesScanned: 1,
     }))
-    const profile = buildProfile([a, b], '用户喜欢简洁回复', '2026-08-14T00:00:00Z')
+    const profile = buildProfile([a, b], '用户喜欢简洁回复', [], '2026-08-14T00:00:00Z')
     expect(profile.version).toBe(1)
     expect(profile.sources).toHaveLength(2)
-    expect(profile.toolHabits[0]).toEqual({ name: 'Read', count: 3 })
+    expect(profile.toolHabits[0]).toEqual({ name: 'read', count: 3 })
     expect(profile.migratedCommands).toEqual(['/review', '/memory'])
     expect(profile.preferences).toBe('用户喜欢简洁回复')
   })
@@ -126,7 +126,7 @@ describe('analyze: profile assembly', () => {
     const stats = analyzeSource(evidence())
     const fallback = buildPreferenceFallback([stats])
     expect(fallback).toContain('claude-code')
-    expect(fallback).toContain('Read')
+    expect(fallback).toContain('read')
     const profile = buildProfile([stats], '')
     expect(profile.preferences).toBe(fallback)
   })
@@ -136,8 +136,24 @@ describe('analyze: profile assembly', () => {
     const section = renderProfileSection(profile)
     expect(section).toContain('# User Preferences')
     expect(section).toContain('喜欢中文')
-    expect(section).toContain('Read×3')
+    expect(section).toContain('read×3')
     expect(section).toContain('/review×2')
     expect(section).toContain('Chinese (中文)')
+  })
+
+  it('records memory files in the profile and digest', () => {
+    const memoryFiles = [
+      { source: 'claude-code', name: 'CLAUDE.md', path: '/home/.claude/CLAUDE.md', content: 'terse answers' },
+      { source: 'cursor', name: 'rules/style.mdc', path: '/home/.cursor/rules/style.mdc', content: '2-space indent' },
+    ]
+    const profile = buildProfile([analyzeSource(evidence())], '', memoryFiles)
+    expect(profile.memoryFiles).toEqual([
+      { source: 'claude-code', name: 'CLAUDE.md' },
+      { source: 'cursor', name: 'rules/style.mdc' },
+    ])
+    const digest = renderStatsDigest([analyzeSource(evidence())], memoryFiles)
+    expect(digest).toContain('## native memory files')
+    expect(digest).toContain('terse answers')
+    expect(digest).toContain('2-space indent')
   })
 })

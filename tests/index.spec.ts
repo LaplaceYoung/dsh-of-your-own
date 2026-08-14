@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context, Service } from '@deepseek-ai/cordis'
 import * as plugin from '../src/index.ts'
+import { AGENTS_MANAGED_BEGIN } from '../src/store.ts'
 import { MemFs } from './memfs.ts'
 
 /** Minimal `ctx.commands` stub modeled on DSH's command registry. */
@@ -66,8 +67,15 @@ async function tick(ms = 5): Promise<void> {
   return promise
 }
 
-/** Seed realistic transcripts into the MemFs. */
-function seedTranscripts(mem: MemFs): void {
+const config = {
+  home: '/home',
+  storeDir: '/home/.dsh/of-your-own',
+  agentsMdPath: '/home/.dsh/AGENTS.md',
+  roots: { 'claude-code': '/home/.claude/projects', codex: '/home/.codex/sessions' },
+}
+
+/** Seed transcripts + native memory files into the MemFs. */
+function seedWorld(mem: MemFs): void {
   mem.seed('/home/.claude/projects/proj/s1.jsonl', [
     JSON.stringify({ type: 'user', message: { role: 'user', content: '/review 这个改动' }, cwd: '/p1' }),
     JSON.stringify({ type: 'user', message: { role: 'user', content: '帮我修一下这个 bug' }, cwd: '/p1' }),
@@ -78,25 +86,25 @@ function seedTranscripts(mem: MemFs): void {
     JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '重构这段代码' }] } }),
     JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'apply_patch' } }),
   ].join('\n'))
+  mem.seed('/home/.claude/CLAUDE.md', '我喜欢简洁的中文回复。')
+  mem.seed('/home/.cursor/rules/style.mdc', '---\ndescription: style\n---\nUse pnpm, never npm.')
 }
 
-const roots = { 'claude-code': '/home/.claude/projects', codex: '/home/.codex/sessions' }
-
-async function boot(withSystemPrompt = true): Promise<{ ctx: Context; fs: FsStub }> {
+async function boot(): Promise<{ ctx: Context; fs: FsStub }> {
   const ctx = new Context()
   await ctx.plugin(CommandsStub)
   await ctx.plugin(ToolsStub)
-  if (withSystemPrompt) await ctx.plugin(SystemPromptStub)
+  await ctx.plugin(SystemPromptStub)
   await ctx.plugin(FsStub)
   const fs = ctx.get('fs') as unknown as FsStub
-  seedTranscripts(fs.mem)
+  seedWorld(fs.mem)
   return { ctx, fs }
 }
 
 describe('@dsh-external/dsh-of-your-own plugin', () => {
   it('registers /fuck and both inspection tools', async () => {
     const { ctx } = await boot()
-    await ctx.plugin(plugin, { storeDir: '/home/.dsh/of-your-own', roots })
+    await ctx.plugin(plugin, config)
     const commands = ctx.get('commands') as unknown as CommandsStub
     const tools = ctx.get('tools') as unknown as ToolsStub
     expect(commands.registry.has('fuck')).toBe(true)
@@ -104,9 +112,9 @@ describe('@dsh-external/dsh-of-your-own plugin', () => {
     expect(tools.registry.has('my_commands')).toBe(true)
   })
 
-  it('/fuck scans in parallel, persists a profile, and injects preferences', async () => {
+  it('/fuck scans transcripts + memory files, writes native AGENTS.md, injects preferences', async () => {
     const { ctx, fs } = await boot()
-    await ctx.plugin(plugin, { storeDir: '/home/.dsh/of-your-own', roots })
+    await ctx.plugin(plugin, config)
     const commands = ctx.get('commands') as unknown as CommandsStub
     const sp = ctx.get('systemPrompt') as unknown as SystemPromptStub
 
@@ -115,53 +123,95 @@ describe('@dsh-external/dsh-of-your-own plugin', () => {
     expect(result.text).toContain('迁移完成')
     expect(result.text).toContain('claude-code')
     expect(result.text).toContain('codex')
+    expect(result.text).toContain('原生注入')
+    expect(result.text).toContain('claude-code/CLAUDE.md')
 
     // Profile persisted to disk.
-    const stored = await fs.mem.readText('/home/.dsh/of-your-own/profile.json')
-    expect(JSON.parse(stored).version).toBe(1)
+    const stored = JSON.parse(await fs.mem.readText('/home/.dsh/of-your-own/profile.json'))
+    expect(stored.version).toBe(1)
+    expect(stored.memoryFiles).toEqual([
+      { source: 'claude-code', name: 'CLAUDE.md' },
+      { source: 'cursor', name: 'rules/style.mdc' },
+    ])
+
+    // Native AGENTS.md carries the managed block (DSH auto-loads it).
+    const agentsMd = await fs.mem.readText('/home/.dsh/AGENTS.md')
+    expect(agentsMd).toContain(AGENTS_MANAGED_BEGIN)
+    expect(agentsMd).toContain('# User Preferences')
 
     // Command stubs migrated.
-    const stub = await fs.mem.readText('/home/.dsh/of-your-own/commands/review.md')
-    expect(stub).toContain('# /review')
+    expect(await fs.mem.readText('/home/.dsh/of-your-own/commands/review.md')).toContain('# /review')
 
     // Preferences injected into the system prompt.
     expect(sp.injected.some(e => e.name === 'user-preferences')).toBe(true)
   })
 
-  it('/fuck degrades gracefully when no history exists', async () => {
+  it('re-running /fuck upserts the managed block without duplication', async () => {
+    const { ctx, fs } = await boot()
+    await ctx.plugin(plugin, config)
+    const commands = ctx.get('commands') as unknown as CommandsStub
+    await commands.registry.get('fuck')!.handler({ rawInput: '/fuck' })
+    await commands.registry.get('fuck')!.handler({ rawInput: '/fuck' })
+    const agentsMd = await fs.mem.readText('/home/.dsh/AGENTS.md')
+    expect((agentsMd.match(/dsh-of-your-own:begin/g) ?? []).length).toBe(1)
+  })
+
+  it('preserves user-authored content in AGENTS.md outside the block', async () => {
+    const { ctx, fs } = await boot()
+    await fs.mem.writeText('/home/.dsh/AGENTS.md', '# My rules\n\nKeep this.\n')
+    await ctx.plugin(plugin, config)
+    const commands = ctx.get('commands') as unknown as CommandsStub
+    await commands.registry.get('fuck')!.handler({ rawInput: '/fuck' })
+    const agentsMd = await fs.mem.readText('/home/.dsh/AGENTS.md')
+    expect(agentsMd).toContain('# My rules')
+    expect(agentsMd).toContain('Keep this.')
+    expect(agentsMd).toContain(AGENTS_MANAGED_BEGIN)
+  })
+
+  it('/fuck succeeds on memory files alone when no transcripts exist', async () => {
     const { ctx, fs } = await boot()
     await fs.mem.remove('/home/.claude/projects/proj/s1.jsonl')
     await fs.mem.remove('/home/.codex/sessions/2026/01/01/rollout-1.jsonl')
-    await ctx.plugin(plugin, { storeDir: '/home/.dsh/of-your-own', roots: { 'claude-code': '/home/.claude/projects' } })
+    await ctx.plugin(plugin, config)
     const commands = ctx.get('commands') as unknown as CommandsStub
     const result = await commands.registry.get('fuck')!.handler({ rawInput: '/fuck' })
     expect(result.kind).toBe('success')
-    expect(result.text).toContain('No transcript history found')
+    expect(result.text).toContain('claude-code/CLAUDE.md')
+  })
+
+  it('/fuck reports nothing found when neither transcripts nor memory files exist', async () => {
+    const { ctx, fs } = await boot()
+    await fs.mem.remove('/home/.claude/projects/proj/s1.jsonl')
+    await fs.mem.remove('/home/.codex/sessions/2026/01/01/rollout-1.jsonl')
+    await fs.mem.remove('/home/.claude/CLAUDE.md')
+    await fs.mem.remove('/home/.cursor/rules/style.mdc')
+    await ctx.plugin(plugin, config)
+    const commands = ctx.get('commands') as unknown as CommandsStub
+    const result = await commands.registry.get('fuck')!.handler({ rawInput: '/fuck' })
+    expect(result.kind).toBe('success')
+    expect(result.text).toContain('No transcript history')
   })
 
   it('my_profile reads the stored profile; refresh re-scans', async () => {
     const { ctx } = await boot()
-    await ctx.plugin(plugin, { storeDir: '/home/.dsh/of-your-own', roots })
+    await ctx.plugin(plugin, config)
     const tools = ctx.get('tools') as unknown as ToolsStub
     const commands = ctx.get('commands') as unknown as CommandsStub
 
-    // No profile yet.
     expect(await tools.registry.get('my_profile')!.execute({})).toContain('no profile yet')
 
-    // Build one via /fuck, then read it back.
     await commands.registry.get('fuck')!.handler({ rawInput: '/fuck' })
     const section = await tools.registry.get('my_profile')!.execute({})
     expect(section).toContain('# User Preferences')
-    expect(section).toContain('Read×2')
+    expect(section).toContain('read×2')
 
-    // Refresh re-scans and re-injects.
     const refreshed = await tools.registry.get('my_profile')!.execute({ refresh: true })
     expect(refreshed).toContain('# User Preferences')
   })
 
   it('my_commands lists migrated commands after /fuck', async () => {
     const { ctx } = await boot()
-    await ctx.plugin(plugin, { storeDir: '/home/.dsh/of-your-own', roots })
+    await ctx.plugin(plugin, config)
     const tools = ctx.get('tools') as unknown as ToolsStub
     const commands = ctx.get('commands') as unknown as CommandsStub
 
@@ -172,7 +222,7 @@ describe('@dsh-external/dsh-of-your-own plugin', () => {
 
   it('re-injects a persisted profile at registration (boot-time recall)', async () => {
     const { ctx, fs } = await boot()
-    await ctx.plugin(plugin, { storeDir: '/home/.dsh/of-your-own', roots })
+    await ctx.plugin(plugin, config)
     const commands = ctx.get('commands') as unknown as CommandsStub
     await commands.registry.get('fuck')!.handler({ rawInput: '/fuck' })
 
@@ -184,7 +234,7 @@ describe('@dsh-external/dsh-of-your-own plugin', () => {
     await ctx2.plugin(FsStub)
     const fs2 = ctx2.get('fs') as unknown as FsStub
     fs2.mem = fs.mem // share the persisted store
-    await ctx2.plugin(plugin, { storeDir: '/home/.dsh/of-your-own', roots })
+    await ctx2.plugin(plugin, config)
     await tick()
     const sp2 = ctx2.get('systemPrompt') as unknown as SystemPromptStub
     expect(sp2.injected.some(e => e.name === 'user-preferences')).toBe(true)
@@ -193,7 +243,7 @@ describe('@dsh-external/dsh-of-your-own plugin', () => {
   it('uses the LLM seam for preferences when configured', async () => {
     const { ctx } = await boot()
     await ctx.plugin(LlmStub)
-    await ctx.plugin(plugin, { storeDir: '/home/.dsh/of-your-own', roots, provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+    await ctx.plugin(plugin, { ...config, provider: 'deepseek-official', model: 'deepseek-v4-flash' })
     const commands = ctx.get('commands') as unknown as CommandsStub
     const llm = ctx.get('llm') as unknown as LlmStub
 
@@ -205,7 +255,7 @@ describe('@dsh-external/dsh-of-your-own plugin', () => {
 
   it('disposes cleanly', async () => {
     const { ctx } = await boot()
-    const fiber = await ctx.plugin(plugin, { storeDir: '/home/.dsh/of-your-own', roots })
+    const fiber = await ctx.plugin(plugin, config)
     const commands = ctx.get('commands') as unknown as CommandsStub
     expect(commands.registry.has('fuck')).toBe(true)
     await fiber.dispose()

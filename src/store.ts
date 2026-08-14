@@ -51,6 +51,50 @@ export function buildCommandStub(name: string, source: string, observed: number)
   ].join('\n')
 }
 
+/** Markers delimiting the plugin-managed block inside ~/.dsh/AGENTS.md. */
+export const AGENTS_MANAGED_BEGIN = '<!-- dsh-of-your-own:begin -->'
+export const AGENTS_MANAGED_END = '<!-- dsh-of-your-own:end -->'
+
+/** Wrap a section in the managed markers (pure). */
+export function buildAgentsBlock(section: string): string {
+  return `${AGENTS_MANAGED_BEGIN}\n${section}\n${AGENTS_MANAGED_END}`
+}
+
+/**
+ * Replace the managed block in existing AGENTS.md content, or append it
+ * when absent. User-authored content outside the block is never touched,
+ * and re-runs never duplicate the block (pure).
+ */
+export function upsertAgentsBlock(existing: string, section: string): string {
+  const block = buildAgentsBlock(section)
+  const begin = existing.indexOf(AGENTS_MANAGED_BEGIN)
+  const end = existing.indexOf(AGENTS_MANAGED_END)
+  if (begin >= 0 && end > begin) {
+    return existing.slice(0, begin) + block + existing.slice(end + AGENTS_MANAGED_END.length)
+  }
+  const sep = existing.length === 0 ? '' : existing.endsWith('\n') ? '\n' : '\n\n'
+  return existing + sep + block + '\n'
+}
+
+/**
+ * Write (or update) the managed block inside DSH's native user-global
+ * instruction file. DSH's workspace-context loads $DSH_HOME/AGENTS.md on
+ * every session — so the migrated preferences survive even without this
+ * plugin mounted.
+ */
+export async function writeNativeAgentsMd(
+  fs: FsLike,
+  agentsPath: string,
+  section: string,
+): Promise<string> {
+  let existing = ''
+  try {
+    existing = await fs.readText(agentsPath)
+  } catch { /* no file yet */ }
+  await fs.writeText(agentsPath, upsertAgentsBlock(existing, section))
+  return agentsPath
+}
+
 /** Serialize the profile (stable key order for diff-friendly files). */
 export function serializeProfile(profile: UserProfile): string {
   return `${JSON.stringify(profile, null, 2)}\n`

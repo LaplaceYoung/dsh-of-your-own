@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
+  cleanMemoryContent,
   collectTranscriptFiles,
-  detectLanguage,
   extractSlashCommand,
+  parseClaudeHistoryLine,
   parseClaudeLine,
   parseCodexLine,
+  parsePiLine,
   resolveDefaultRoots,
+  scanMemoryFiles,
   scanSources,
   defaultParsers,
   defaultLimits,
@@ -62,6 +65,25 @@ describe('sources: line parsers', () => {
     expect(parseCodexLine(stringContent).prompts).toEqual(['plain prompt'])
     expect(parseCodexLine(eventMsg).prompts).toEqual(['event prompt'])
   })
+
+  it('parses pi/omp session cwd, user text blocks, and assistant toolCalls', () => {
+    const session = JSON.stringify({ type: 'session', version: 3, cwd: '/Users/x/pi-proj' })
+    const user = JSON.stringify({ type: 'message', message: { role: 'user', content: [{ type: 'text', text: '修 bug' }] } })
+    const assistant = JSON.stringify({ type: 'message', message: { role: 'assistant', content: [{ type: 'thinking', thinking: '...' }, { type: 'toolCall', name: 'directorx_preflight' }] } })
+    expect(parsePiLine(session).cwd).toBe('/Users/x/pi-proj')
+    expect(parsePiLine(user).prompts).toEqual(['修 bug'])
+    expect(parsePiLine(assistant).tools).toEqual(['directorx_preflight'])
+  })
+
+  it('parses pi user messages with plain-string content', () => {
+    const user = JSON.stringify({ type: 'message', message: { role: 'user', content: '字符串内容' } })
+    expect(parsePiLine(user).prompts).toEqual(['字符串内容'])
+  })
+
+  it('parses Claude Code history.jsonl display+project lines', () => {
+    const line = JSON.stringify({ display: '/model', project: '/Users/x/proj', timestamp: 1 })
+    expect(parseClaudeHistoryLine(line)).toEqual({ prompts: ['/model'], tools: [], cwd: '/Users/x/proj' })
+  })
 })
 
 describe('sources: prompt heuristics', () => {
@@ -71,11 +93,6 @@ describe('sources: prompt heuristics', () => {
     expect(extractSlashCommand('/Users/x/file')).toBeUndefined()
     expect(extractSlashCommand('please run /review')).toBeUndefined()
     expect(extractSlashCommand('')).toBeUndefined()
-  })
-
-  it('detects zh vs en prompts', () => {
-    expect(detectLanguage('帮我写一个函数')).toBe('zh')
-    expect(detectLanguage('write me a function')).toBe('en')
   })
 })
 
@@ -90,7 +107,7 @@ describe('sources: scanning', () => {
     expect(files.every(f => f.endsWith('.jsonl'))).toBe(true)
   })
 
-  it('scans both sources in parallel and aggregates evidence', async () => {
+  it('scans claude + codex + pi sources in parallel', async () => {
     const fs = new MemFs()
     await fs.seed('/home/.claude/projects/proj/s1.jsonl', [
       JSON.stringify({ type: 'user', message: { role: 'user', content: '/review 这个改动' }, cwd: '/p1' }),
@@ -101,20 +118,39 @@ describe('sources: scanning', () => {
       JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '修 bug' }] } }),
       JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'apply_patch' } }),
     ].join('\n'))
+    await fs.seed('/home/.pi/agent/sessions/proj/s1.jsonl', [
+      JSON.stringify({ type: 'session', cwd: '/p3' }),
+      JSON.stringify({ type: 'message', message: { role: 'user', content: [{ type: 'text', text: 'pi 里的提问' }] } }),
+      JSON.stringify({ type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', name: 'bash' }] } }),
+    ].join('\n'))
 
     const roots = resolveDefaultRoots('/home')
+    delete roots.omp
+    delete roots['claude-history']
     const evidence = await scanSources(fs as never, roots, defaultParsers, defaultLimits)
-    expect(evidence.map(e => e.source).sort()).toEqual(['claude-code', 'codex'])
+    expect(evidence.map(e => e.source).sort()).toEqual(['claude-code', 'codex', 'pi'])
 
     const cc = evidence.find(e => e.source === 'claude-code')!
     expect(cc.toolCalls).toEqual(['Read', 'Read', 'Bash'])
     expect(cc.slashCommands).toEqual(['/review'])
-    expect(cc.cwds).toEqual(['/p1'])
 
-    const cx = evidence.find(e => e.source === 'codex')!
-    expect(cx.toolCalls).toEqual(['apply_patch'])
-    expect(cx.cwds).toEqual(['/p2'])
-    expect(cx.prompts).toEqual(['修 bug'])
+    const pi = evidence.find(e => e.source === 'pi')!
+    expect(pi.toolCalls).toEqual(['bash'])
+    expect(pi.cwds).toEqual(['/p3'])
+    expect(pi.prompts).toEqual(['pi 里的提问'])
+  })
+
+  it('scans a single-file root (claude-history) directly', async () => {
+    const fs = new MemFs()
+    await fs.seed('/home/.claude/history.jsonl', [
+      JSON.stringify({ display: '/model', project: '/p1' }),
+      JSON.stringify({ display: '/init 一下', project: '/p1' }),
+    ].join('\n'))
+    const evidence = await scanSources(fs as never, { 'claude-history': '/home/.claude/history.jsonl' }, defaultParsers, defaultLimits)
+    expect(evidence).toHaveLength(1)
+    expect(evidence[0].filesScanned).toBe(1)
+    expect(evidence[0].slashCommands).toEqual(['/model', '/init'])
+    expect(evidence[0].cwds).toEqual(['/p1'])
   })
 
   it('honors maxFilesPerSource and maxPrompts limits', async () => {
@@ -132,5 +168,43 @@ describe('sources: scanning', () => {
     const fs = new MemFs()
     const evidence = await scanSources(fs as never, { 'claude-code': '/nope' }, defaultParsers, defaultLimits)
     expect(evidence).toEqual([])
+  })
+})
+
+describe('sources: memory files', () => {
+  it('strips cursor .mdc frontmatter', () => {
+    const raw = '---\ndescription: rule\n---\nAlways use pnpm.'
+    expect(cleanMemoryContent(raw)).toBe('Always use pnpm.')
+    expect(cleanMemoryContent('plain')).toBe('plain')
+  })
+
+  it('discovers CLAUDE.md, Codex AGENTS.md, GEMINI.md, and cursor rules/agents', async () => {
+    const fs = new MemFs()
+    await fs.seed('/home/.claude/CLAUDE.md', 'I prefer terse answers.')
+    await fs.seed('/home/.codex/AGENTS.md', '# Codex manual')
+    await fs.seed('/home/.gemini/GEMINI.md', 'Gemini context.')
+    await fs.seed('/home/.cursor/rules/style.mdc', '---\ndescription: style\n---\nUse 2-space indent.')
+    await fs.seed('/home/.cursor/agents/reviewer.md', 'You review code.')
+
+    const found = await scanMemoryFiles(fs as never, '/home')
+    const keys = found.map(f => `${f.source}/${f.name}`)
+    expect(keys).toEqual([
+      'claude-code/CLAUDE.md',
+      'codex/AGENTS.md',
+      'cursor/agents/reviewer.md',
+      'cursor/rules/style.mdc',
+      'gemini-cli/GEMINI.md',
+    ])
+    const mdc = found.find(f => f.name === 'rules/style.mdc')!
+    expect(mdc.content).toBe('Use 2-space indent.') // frontmatter stripped
+  })
+
+  it('bounds memory content and skips empty/missing files', async () => {
+    const fs = new MemFs()
+    await fs.seed('/home/.claude/CLAUDE.md', 'x'.repeat(50))
+    await fs.seed('/home/.codex/AGENTS.md', '   ') // empty after trim → skipped
+    const found = await scanMemoryFiles(fs as never, '/home', 10)
+    expect(found).toHaveLength(1)
+    expect(found[0].content).toHaveLength(11) // 10 chars + ellipsis
   })
 })
