@@ -57,6 +57,15 @@ import {
   type FsLike as StoreFs,
   type MigratedCommand,
 } from './store.js'
+import {
+  buildHandoffBrief,
+  listSessions,
+  renderResumeReport,
+  renderSessionList,
+  defaultSessionLimits,
+  type SessionRecord,
+  type SessionScanLimits,
+} from './sessions.js'
 
 export const name = 'dsh-of-your-own'
 
@@ -86,6 +95,10 @@ export interface Config {
   maxMemoryChars?: number
   /** Order of the learned-preferences section in the system prompt. */
   sectionOrder?: number
+  /** Session listing caps. */
+  maxSessionsPerSource?: number
+  /** Order of a resumed-task handoff block in the system prompt. */
+  resumeOrder?: number
 }
 
 /** Structural mirror of the DSH command service. */
@@ -227,6 +240,10 @@ export function apply(ctx: Context, config: Config = {}) {
       maxBytesPerFile: config.maxBytesPerFile ?? defaultLimits.maxBytesPerFile,
       maxPrompts: config.maxPrompts ?? defaultLimits.maxPrompts,
     }
+    const sessionLimits: SessionScanLimits = {
+      ...defaultSessionLimits,
+      maxFilesPerSource: config.maxSessionsPerSource ?? defaultSessionLimits.maxFilesPerSource,
+    }
     const roots = config.roots ?? resolveDefaultRoots(home)
     const enabled: Record<string, string> = {}
     for (const [id, root] of Object.entries(roots)) {
@@ -280,6 +297,61 @@ export function apply(ctx: Context, config: Config = {}) {
           return { kind: 'success', text: renderMigrationReport(result, result.profile.language) }
         } catch (err) {
           return { kind: 'error', text: `Migration failed: ${err instanceof Error ? err.message : String(err)}` }
+        }
+      },
+    }))
+
+    // --- session takeover: /sessions + /resume ------------------------------
+    let sessionCache: SessionRecord[] | undefined
+
+    const refreshSessions = async (): Promise<SessionRecord[]> => {
+      sessionCache = await listSessions(fs() as unknown as SourcesFs, enabled, sessionLimits)
+      return sessionCache
+    }
+
+    /** Resolve an argument against the catalog: index, id prefix, or title fragment. */
+    const findSession = (records: readonly SessionRecord[], arg: string): SessionRecord | undefined => {
+      const n = Number(arg)
+      if (Number.isInteger(n) && n >= 1 && n <= records.length) return records[n - 1]
+      const needle = arg.trim().toLowerCase()
+      return records.find(r => r.id.toLowerCase().startsWith(needle))
+        ?? records.find(r => (r.title ?? '').toLowerCase().includes(needle))
+    }
+
+    disposers.push(commands.register({
+      name: 'sessions',
+      description: 'List resumable sessions from Claude Code, Codex, pi, and omp, newest first.',
+      handler: async () => {
+        try {
+          const records = await refreshSessions()
+          return { kind: 'success', text: renderSessionList(records, home, Date.now()) }
+        } catch (err) {
+          return { kind: 'error', text: `Session scan failed: ${err instanceof Error ? err.message : String(err)}` }
+        }
+      },
+    }))
+
+    disposers.push(commands.register({
+      name: 'resume',
+      description: 'Resume a session from another harness by list number, id, or title fragment. Hands the task over to this agent with full context.',
+      handler: async (invocation) => {
+        const arg = (invocation.rawInput ?? '').replace(/^\/resume\b/, '').trim()
+        if (!arg) return { kind: 'error', text: 'Usage: /resume <#|id|title fragment> — run /sessions first.' }
+        try {
+          const records = sessionCache ?? await refreshSessions()
+          const record = findSession(records, arg)
+          if (!record) return { kind: 'error', text: `No session matches "${arg}". Run /sessions to see what is resumable.` }
+          const brief = buildHandoffBrief(record)
+          if (systemPrompt && typeof systemPrompt.context === 'function') {
+            disposers.push(systemPrompt.context!({
+              name: `resumed-task-${record.id}`,
+              order: config.resumeOrder ?? 15,
+              text: brief,
+            }))
+          }
+          return { kind: 'success', text: renderResumeReport(record, brief) }
+        } catch (err) {
+          return { kind: 'error', text: `Resume failed: ${err instanceof Error ? err.message : String(err)}` }
         }
       },
     }))

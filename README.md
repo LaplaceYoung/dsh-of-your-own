@@ -4,7 +4,7 @@
 
 **Your other agents raised you. DSH just got custody.**
 
-[![tests](https://img.shields.io/badge/tests-52%2F52-3FB950?style=flat-square&labelColor=black)](tests)
+[![tests](https://img.shields.io/badge/tests-75%2F75-3FB950?style=flat-square&labelColor=black)](tests)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&labelColor=black&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![protocol](https://img.shields.io/badge/protocol-cordis-orange?style=flat-square&labelColor=black)](https://github.com/deepseek-ai/deepseek-harness)
 [![license](https://img.shields.io/badge/license-MIT-white?style=flat-square&labelColor=black)](LICENSE)
@@ -57,12 +57,14 @@ Every agent starts with amnesia. You re-teach the same preferences, the same too
 
 ## TL;DR
 
-| You want | Run | What lands on disk |
+| You want | Run | What happens |
 | :--- | :--- | :--- |
 | **The whole thing** | install, then `/fuck` in a DSH session | `~/.dsh/AGENTS.md` managed block + `profile.json` + command stubs + prompt injection |
 | **See what it learned** | ask the agent to run `my_profile` | the full preference section, on demand |
 | **Re-learn you** | `my_profile` with `{ refresh: true }` | fresh scan, fresh profile, upserted block — no duplicates |
 | **List migrated commands** | ask for `my_commands` | every slash habit it found elsewhere |
+| **Find unfinished work** | `/sessions` | numbered catalog of every session across all harnesses, newest first |
+| **Take over a task** | `/resume 3` (or id, or a title fragment) | handoff brief injected — this agent continues the foreign task |
 
 ## Installation
 
@@ -91,6 +93,8 @@ Or apply [`cordis.patch.yml`](cordis.patch.yml) and call it a day.
 
 ```
 /fuck                  # full migration: parallel scan → analyze → native migrate
+/sessions              # catalog every resumable session from all harnesses, newest first
+/resume <#|id|title>   # hand that foreign task over to this agent, context included
 ```
 
 Real output from a real laptop with five harnesses of accumulated habits:
@@ -116,11 +120,34 @@ Two inspection tools (the model can call them; so can you, by asking):
 | `my_profile` | show the learned preferences; `{ refresh: true }` re-scans and rebuilds |
 | `my_commands` | list every slash command migrated from your other harnesses, with observation counts |
 
+### Session takeover — your unfinished work, continued here
+
+`/sessions` reads every transcript directory in parallel and renders one numbered catalog:
+
+```
+## Resumable sessions (73)
+
+  #  source          title                                            dir            when      msgs
+  1  omp             Build standalone chat history plugin            ~/Desktop/dsh   3h ago    4
+  2  claude-history  /model                                          ~/Desktop/sos/  3h ago    3
+  3  codex           重构支付模块                                     ~/work/pay      2d ago    31
+… 70 more
+
+Run `/resume <#>` to hand that task to this agent.
+```
+
+`/resume` matches by list number, session-id prefix, or a fragment of the title. It rebuilds the
+session into a handoff brief — original task, working directory, most recent direction, where it
+stopped, tools used — and injects it into the system prompt, so this agent picks up the task and
+continues it right away. The brief is also echoed back to you, so you can correct the course before
+it runs.
+
 ## Highlights
 
 |       | Feature                     | What it does                                                                                     |
 | :---: | :-------------------------- | :----------------------------------------------------------------------------------------------- |
 | 🤬    | **`/fuck`**                 | One command. Five harnesses scanned in parallel. You come pre-configured.                        |
+| 🪂    | **`/sessions` + `/resume`** | Catalog every foreign session, then hand one over with a full handoff brief. Unfinished work, finished here. |
 | 🏠    | **Native landing zone**     | Writes into `~/.dsh/AGENTS.md` — the file DSH loads on every boot. Survives uninstall.           |
 | 🔁    | **Idempotent upsert**       | Managed block between HTML markers. Re-run all you like; user content outside stays untouched.   |
 | 📚    | **Reads your rule files**   | CLAUDE.md, Codex AGENTS.md, GEMINI.md, Cursor `.mdc` rules — your explicit words, not just stats. |
@@ -160,7 +187,7 @@ then install it and run /fuck on my machine.
 ## Development
 
 ```bash
-pnpm test        # 52 tests across 4 specs — parsers, analysis, persistence, plugin integration
+pnpm test        # 75 tests across 5 specs — parsers, sessions, analysis, persistence, plugin integration
 pnpm typecheck   # tsc --noEmit
 pnpm build       # tsc → lib/
 ```
@@ -171,8 +198,9 @@ src/
                #           plus native memory files (CLAUDE.md, AGENTS.md, GEMINI.md, Cursor rules)
   analyze.ts   # frequency stats (case-merged) + LLM preference synthesis + profile assembly
   store.ts     # profile persistence + ~/.dsh/AGENTS.md managed-block upsert
-  index.ts     # plugin entry: /fuck, my_profile, my_commands, boot-time recall
-tests/         # vitest: parsers, analyze, store, plugin integration
+  sessions.ts  # session takeover: transcript → resumable records + handoff briefs
+  index.ts     # plugin entry: /fuck, /sessions, /resume, my_profile, my_commands, boot-time recall
+tests/         # vitest: parsers, sessions, analyze, store, plugin integration
 ```
 
 ## License

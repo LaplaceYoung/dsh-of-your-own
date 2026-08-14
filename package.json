@@ -14,7 +14,7 @@
   "license": "MIT",
   "engines": { "dsh": ">=0.0.1" },
   "dshx": {
-    "contributes": { "commands": ["fuck"], "tools": ["my_profile", "my_commands"], "skills": [] }
+    "contributes": { "commands": ["fuck", "sessions", "resume"], "tools": ["my_profile", "my_commands"], "skills": [] }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

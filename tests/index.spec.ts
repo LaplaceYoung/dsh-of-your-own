@@ -77,14 +77,15 @@ const config = {
 /** Seed transcripts + native memory files into the MemFs. */
 function seedWorld(mem: MemFs): void {
   mem.seed('/home/.claude/projects/proj/s1.jsonl', [
-    JSON.stringify({ type: 'user', message: { role: 'user', content: '/review 这个改动' }, cwd: '/p1' }),
-    JSON.stringify({ type: 'user', message: { role: 'user', content: '帮我修一下这个 bug' }, cwd: '/p1' }),
-    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read' }, { type: 'tool_use', name: 'Read' }, { type: 'tool_use', name: 'Bash' }] } }),
+    JSON.stringify({ type: 'user', message: { role: 'user', content: '/review 这个改动' }, cwd: '/p1', sessionId: 'cc-1', timestamp: '2026-08-13T09:00:00Z' }),
+    JSON.stringify({ type: 'user', message: { role: 'user', content: '帮我修一下这个 bug' }, cwd: '/p1', sessionId: 'cc-1', timestamp: '2026-08-13T09:01:00Z' }),
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read' }, { type: 'tool_use', name: 'Read' }, { type: 'tool_use', name: 'Bash' }, { type: 'text', text: '已定位到问题所在' }] }, sessionId: 'cc-1', timestamp: '2026-08-13T09:02:00Z' }),
   ].join('\n'))
   mem.seed('/home/.codex/sessions/2026/01/01/rollout-1.jsonl', [
-    JSON.stringify({ type: 'session_meta', payload: { cwd: '/p2' } }),
+    JSON.stringify({ type: 'session_meta', payload: { session_id: 'cx-1', cwd: '/p2', timestamp: '2026-08-12T00:00:00Z' } }),
     JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '重构这段代码' }] } }),
     JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'apply_patch' } }),
+    JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '重构完毕' }] } }),
   ].join('\n'))
   mem.seed('/home/.claude/CLAUDE.md', '我喜欢简洁的中文回复。')
   mem.seed('/home/.cursor/rules/style.mdc', '---\ndescription: style\n---\nUse pnpm, never npm.')
@@ -260,5 +261,76 @@ describe('@dsh-external/dsh-of-your-own plugin', () => {
     expect(commands.registry.has('fuck')).toBe(true)
     await fiber.dispose()
     expect(commands.registry.has('fuck')).toBe(false)
+  })
+
+  it('registers /sessions and /resume', async () => {
+    const { ctx } = await boot()
+    await ctx.plugin(plugin, config)
+    const commands = ctx.get('commands') as unknown as CommandsStub
+    expect(commands.registry.has('sessions')).toBe(true)
+    expect(commands.registry.has('resume')).toBe(true)
+  })
+
+  it('/sessions lists sessions newest first with titles', async () => {
+    const { ctx } = await boot()
+    await ctx.plugin(plugin, config)
+    const commands = ctx.get('commands') as unknown as CommandsStub
+    const result = await commands.registry.get('sessions')!.handler({ rawInput: '/sessions' })
+    expect(result.kind).toBe('success')
+    expect(result.text).toContain('## Resumable sessions')
+    expect(result.text).toContain('claude-code')
+    expect(result.text).toContain('codex')
+    // Newest first: cc-1 (Aug 13) before cx-1 (Aug 12).
+    const ccIdx = result.text.indexOf('/review 这个改动')
+    const cxIdx = result.text.indexOf('重构这段代码')
+    expect(ccIdx).toBeLessThan(cxIdx)
+    expect(ccIdx).toBeGreaterThan(-1)
+  })
+
+  it('/resume by number injects the handoff brief and reports identity', async () => {
+    const { ctx } = await boot()
+    await ctx.plugin(plugin, config)
+    const commands = ctx.get('commands') as unknown as CommandsStub
+    const sp = ctx.get('systemPrompt') as unknown as SystemPromptStub
+
+    const result = await commands.registry.get('resume')!.handler({ rawInput: '/resume 1' })
+    expect(result.kind).toBe('success')
+    expect(result.text).toContain('## Resuming claude-code session')
+    expect(result.text).toContain('# Resumed task (from claude-code)')
+
+    // Brief injected so the agent continues the task this session.
+    const resumed = sp.injected.find(e => e.name.startsWith('resumed-task-'))
+    expect(resumed).toBeDefined()
+    expect(resumed!.text).toContain('Original task: /review 这个改动')
+    expect(resumed!.text).toContain('已定位到问题所在')
+    expect(resumed!.text).toContain('Read×2')
+  })
+
+  it('/resume matches by id prefix and title fragment', async () => {
+    const { ctx } = await boot()
+    await ctx.plugin(plugin, config)
+    const commands = ctx.get('commands') as unknown as CommandsStub
+
+    const byId = await commands.registry.get('resume')!.handler({ rawInput: '/resume cx-1' })
+    expect(byId.kind).toBe('success')
+    expect(byId.text).toContain('codex session `cx-1`')
+
+    const byTitle = await commands.registry.get('resume')!.handler({ rawInput: '/resume 重构' })
+    expect(byTitle.kind).toBe('success')
+    expect(byTitle.text).toContain('codex session `cx-1`')
+  })
+
+  it('/resume rejects missing args and unknown matches', async () => {
+    const { ctx } = await boot()
+    await ctx.plugin(plugin, config)
+    const commands = ctx.get('commands') as unknown as CommandsStub
+
+    const noArg = await commands.registry.get('resume')!.handler({ rawInput: '/resume' })
+    expect(noArg.kind).toBe('error')
+    expect(noArg.text).toContain('/sessions first')
+
+    const miss = await commands.registry.get('resume')!.handler({ rawInput: '/resume 不存在的任务xyz' })
+    expect(miss.kind).toBe('error')
+    expect(miss.text).toContain('No session matches')
   })
 })

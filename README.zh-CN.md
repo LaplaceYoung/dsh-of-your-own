@@ -4,7 +4,7 @@
 
 **别的 agent 把你养大的。DSH 只是接过了抚养权。**
 
-[![tests](https://img.shields.io/badge/tests-52%2F52-3FB950?style=flat-square&labelColor=black)](tests)
+[![tests](https://img.shields.io/badge/tests-75%2F75-3FB950?style=flat-square&labelColor=black)](tests)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&labelColor=black&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![protocol](https://img.shields.io/badge/protocol-cordis-orange?style=flat-square&labelColor=black)](https://github.com/deepseek-ai/deepseek-harness)
 [![license](https://img.shields.io/badge/license-MIT-white?style=flat-square&labelColor=black)](LICENSE)
@@ -57,12 +57,14 @@
 
 ## 太长不看版
 
-| 你想要 | 运行 | 落盘的东西 |
+| 你想要 | 运行 | 会发生什么 |
 | :--- | :--- | :--- |
 | **全套** | 安装后在 DSH 会话里敲 `/fuck` | `~/.dsh/AGENTS.md` 托管块 + `profile.json` + 命令存根 + 提示词注入 |
 | **看看学到了啥** | 让 agent 调用 `my_profile` | 完整的偏好章节，随叫随到 |
 | **重新认识我** | `my_profile` 带 `{ refresh: true }` | 重扫、重建、原地更新托管块——不会重复 |
 | **列出迁移的命令** | 让 agent 调用 `my_commands` | 从其他 harness 挖出来的每一个 slash 习惯 |
+| **找没做完的活儿** | `/sessions` | 所有 harness 会话的编号清单，最新的排前面 |
+| **接管一个任务** | `/resume 3`（或 id、标题片段） | 交接简报注入——当前 agent 接着干那个外来任务 |
 
 ## 安装
 
@@ -91,6 +93,8 @@ pnpm build
 
 ```
 /fuck                  # 全量迁移：并行扫描 → 分析 → 原生迁移
+/sessions              # 列出所有 harness 里可续跑的会话，最新的排前面
+/resume <#|id|标题片段>  # 把那个外来任务连上下文一起交给当前 agent
 ```
 
 真机实测输出（一台攒了五个 harness 习惯的笔记本）：
@@ -116,11 +120,32 @@ Future sessions will remember you.
 | `my_profile` | 查看学到的偏好；`{ refresh: true }` 重新扫描重建档案 |
 | `my_commands` | 列出从其他 harness 迁移来的 slash 命令及观测次数 |
 
+### 会话接管 —— 你没做完的活儿，在这儿接着干
+
+`/sessions` 并行读完所有 transcript 目录，渲染成一张编号清单：
+
+```
+## Resumable sessions (73)
+
+  #  source          title                                            dir            when      msgs
+  1  omp             Build standalone chat history plugin            ~/Desktop/dsh   3h ago    4
+  2  claude-history  /model                                          ~/Desktop/sos/  3h ago    3
+  3  codex           重构支付模块                                     ~/work/pay      2d ago    31
+… 还有 70 个
+
+Run `/resume <#>` to hand that task to this agent.
+```
+
+`/resume` 按编号、session id 前缀或标题片段匹配。它把会话重建成交接简报——原始任务、工作
+目录、最近指令、停在哪一步、用过什么工具——注入系统提示词，当前 agent 接手即干。简报也会回显
+给你，动手前还能改主意。
+
 ## 亮点
 
 |       | 特性                        | 干嘛的                                                                                     |
 | :---: | :-------------------------- | :----------------------------------------------------------------------------------------- |
 | 🤬    | **`/fuck`**                 | 一条命令。五个 harness 并行扫完。你带着出厂设置进场。                                       |
+| 🪂    | **`/sessions` + `/resume`** | 编目所有外来会话，再把某一个连完整交接简报一起接过来。没做完的活儿，在这儿做完。               |
 | 🏠    | **原生落点**                | 写进 `~/.dsh/AGENTS.md`——DSH 每次开机加载的文件。卸载插件也带不走。                          |
 | 🔁    | **幂等更新**                | 托管块用 HTML 标记围栏。随便重跑，块外你自己写的内容一个字不动。                              |
 | 📚    | **读你的规则文件**          | CLAUDE.md、Codex AGENTS.md、GEMINI.md、Cursor `.mdc`——你亲笔的话，不只是统计。                |
@@ -160,7 +185,7 @@ Future sessions will remember you.
 ## 开发
 
 ```bash
-pnpm test        # 52 个测试，4 个 spec——解析器、分析、持久化、插件集成
+pnpm test        # 75 个测试，5 个 spec——解析器、会话接管、分析、持久化、插件集成
 pnpm typecheck   # tsc --noEmit
 pnpm build       # tsc → lib/
 ```
@@ -171,8 +196,9 @@ src/
                #           以及原生记忆文件（CLAUDE.md、AGENTS.md、GEMINI.md、Cursor 规则）
   analyze.ts   # 频率统计（大小写合并）+ LLM 偏好综合 + 档案组装
   store.ts     # 档案持久化 + ~/.dsh/AGENTS.md 托管块幂等写入
-  index.ts     # 插件入口：/fuck、my_profile、my_commands、启动时记忆回读
-tests/         # vitest：解析器、分析、持久化、插件集成
+  sessions.ts  # 会话接管：transcript → 可续跑会话记录 + 交接简报
+  index.ts     # 插件入口：/fuck、/sessions、/resume、my_profile、my_commands、启动时记忆回读
+tests/         # vitest：解析器、会话、分析、持久化、插件集成
 ```
 
 ## License
