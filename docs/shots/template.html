@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>dsh-of-your-own — live DSH session</title>
+<style>
+  :root {
+    --bg: #1e1e2e;
+    --panel: #181825;
+    --border: #313244;
+    --fg: #cdd6f4;
+    --dim: #6c7086;
+    --green: #a6e3a1;
+    --peach: #fab387;
+    --mauve: #cba6f7;
+    --blue: #89b4fa;
+    --yellow: #f9e2af;
+    --red: #f38ba8;
+    --teal: #94e2d5;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#11111b; font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace; padding:40px; color:var(--fg); }
+  .term {
+    width:920px;
+    background:var(--bg);
+    border-radius:12px;
+    overflow:hidden;
+    box-shadow:0 24px 64px rgba(0,0,0,.55);
+    border:1px solid var(--border);
+  }
+  .titlebar {
+    height:38px; background:var(--panel); display:flex; align-items:center; padding:0 16px;
+    border-bottom:1px solid var(--border); gap:8px;
+  }
+  .dot { width:12px; height:12px; border-radius:50%; }
+  .dot.r{background:#f38ba8}.dot.y{background:#f9e2af}.dot.g{background:#a6e3a1}
+  .titlebar .name { margin-left:12px; color:var(--dim); font-size:13px; }
+  .body { padding:22px 26px; font-size:13.5px; line-height:1.62; white-space:pre-wrap; word-break:break-word; }
+  .cmd { color:var(--green); font-weight:600; }
+  .ok { color:var(--green); }
+  .hdr { color:var(--mauve); font-weight:700; }
+  .sub { color:var(--blue); font-weight:600; }
+  .key { color:var(--peach); font-weight:600; }
+  .dim { color:var(--dim); }
+  .hl { color:var(--yellow); }
+  .box { color:var(--teal); }
+  .path { color:var(--blue); }
+  .num { color:var(--peach); }
+  .spacer { height:14px; }
+  .sep { color:var(--dim); }
+</style>
+</head>
+<body>
+<div class="term">
+  <div class="titlebar">
+    <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+    <span class="name">dsh — deepseek-harness · dsh-of-your-own mounted</span>
+  </div>
+  <div class="body" id="out"></div>
+</div>
+<script>
+// Filled by the build step.
+</script>
+</body>
+</html>

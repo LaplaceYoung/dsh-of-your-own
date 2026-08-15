@@ -8,5 +8,5 @@
  * runtime resolves the real package from its own workspace.
  */
 declare module '@deepseek-ai/cordis' {
-  export * from 'cordis'
+  export * from '@deepseek-ai/cordis'
 }
