@@ -49,6 +49,8 @@ export interface SourceEvidence {
   slashCommands: string[]
   /** Working directories the sessions ran in, one entry per session. */
   cwds: string[]
+  /** Local hours (0-23) at which user messages were sent. */
+  messageHours: number[]
   /** Number of transcript files actually scanned. */
   filesScanned: number
 }
@@ -96,21 +98,42 @@ export function extractSlashCommand(prompt: string): string | undefined {
   return m ? `/${m[1]}` : undefined
 }
 
+/** Coerce a timestamp (ISO string or epoch ms/s) into local hour 0-23. */
+export function hourOf(value: unknown): number | undefined {
+  let ms: number | undefined
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    ms = value < 1e12 ? value * 1000 : value
+  } else if (typeof value === 'string') {
+    const t = Date.parse(value)
+    if (!Number.isNaN(t)) ms = t
+  }
+  return ms === undefined ? undefined : new Date(ms).getHours()
+}
+
+/** One parsed line's evidence (hour = local hour of a user message). */
+export interface ParsedLine {
+  prompts: string[]
+  tools: string[]
+  cwd?: string
+  hour?: number
+}
+
 /** Evidence parsed from one Claude Code JSONL line (pure). */
-export function parseClaudeLine(line: string): { prompts: string[]; tools: string[]; cwd?: string } {
+export function parseClaudeLine(line: string): ParsedLine {
   let entry: Record<string, unknown>
   try {
     entry = JSON.parse(line) as Record<string, unknown>
   } catch {
     return { prompts: [], tools: [] }
   }
-  const out = { prompts: [] as string[], tools: [] as string[], cwd: undefined as string | undefined }
+  const out: ParsedLine = { prompts: [], tools: [] }
   if (typeof entry.cwd === 'string') out.cwd = entry.cwd
 
   if (entry.type === 'user') {
     const msg = entry.message as { role?: string; content?: unknown } | undefined
     if (msg?.role === 'user' && typeof msg.content === 'string' && msg.content.trim()) {
       out.prompts.push(msg.content)
+      out.hour = hourOf(entry.timestamp)
     }
   } else if (entry.type === 'assistant') {
     const msg = entry.message as { content?: unknown } | undefined
@@ -126,14 +149,14 @@ export function parseClaudeLine(line: string): { prompts: string[]; tools: strin
 }
 
 /** Evidence parsed from one Codex rollout JSONL line (pure). */
-export function parseCodexLine(line: string): { prompts: string[]; tools: string[]; cwd?: string } {
+export function parseCodexLine(line: string): ParsedLine {
   let entry: Record<string, unknown>
   try {
     entry = JSON.parse(line) as Record<string, unknown>
   } catch {
     return { prompts: [], tools: [] }
   }
-  const out = { prompts: [] as string[], tools: [] as string[], cwd: undefined as string | undefined }
+  const out: ParsedLine = { prompts: [], tools: [] }
   const payload = entry.payload as Record<string, unknown> | undefined
 
   if (entry.type === 'session_meta' && payload && typeof payload.cwd === 'string') {
@@ -148,23 +171,30 @@ export function parseCodexLine(line: string): { prompts: string[]; tools: string
       out.tools.push('shell')
     } else if (ptype === 'message' && payload.role === 'user') {
       const content = payload.content
+      let pushed = false
       if (Array.isArray(content)) {
         for (const item of content) {
           const c = item as { type?: string; text?: string }
           if (c?.type === 'input_text' && typeof c.text === 'string' && c.text.trim()) {
             out.prompts.push(c.text)
+            pushed = true
           }
         }
       } else if (typeof content === 'string' && content.trim()) {
         out.prompts.push(content)
+        pushed = true
       }
+      if (pushed) out.hour = hourOf(entry.timestamp)
     }
   }
 
   // event_msg user messages (older / desktop variants)
   if (entry.type === 'event_msg' && payload?.type === 'user_message' && typeof payload.message === 'string') {
     const text = payload.message.trim()
-    if (text) out.prompts.push(text)
+    if (text) {
+      out.prompts.push(text)
+      out.hour = hourOf(entry.timestamp)
+    }
   }
   return out
 }
@@ -175,14 +205,14 @@ export function parseCodexLine(line: string): { prompts: string[]; tools: string
  * `{"type":"message","message":{"role":"user","content":[{"type":"text"}]}}`,
  * assistant `toolCall` blocks.
  */
-export function parsePiLine(line: string): { prompts: string[]; tools: string[]; cwd?: string } {
+export function parsePiLine(line: string): ParsedLine {
   let entry: Record<string, unknown>
   try {
     entry = JSON.parse(line) as Record<string, unknown>
   } catch {
     return { prompts: [], tools: [] }
   }
-  const out = { prompts: [] as string[], tools: [] as string[], cwd: undefined as string | undefined }
+  const out: ParsedLine = { prompts: [], tools: [] }
 
   if (entry.type === 'session' && typeof entry.cwd === 'string') {
     out.cwd = entry.cwd
@@ -202,6 +232,7 @@ export function parsePiLine(line: string): { prompts: string[]; tools: string[];
         const c = item as { type?: string; text?: string }
         if (c?.type === 'text' && typeof c.text === 'string' && c.text.trim()) {
           out.prompts.push(c.text)
+          out.hour = hourOf(entry.timestamp)
         }
       }
     } else if (msg.role === 'assistant') {
@@ -218,21 +249,24 @@ export function parsePiLine(line: string): { prompts: string[]; tools: string[];
  * Evidence parsed from one Claude Code history.jsonl line (pure). This is
  * the global prompt log: `{"display": "/model", "project": "/path"}`.
  */
-export function parseClaudeHistoryLine(line: string): { prompts: string[]; tools: string[]; cwd?: string } {
+export function parseClaudeHistoryLine(line: string): ParsedLine {
   let entry: Record<string, unknown>
   try {
     entry = JSON.parse(line) as Record<string, unknown>
   } catch {
     return { prompts: [], tools: [] }
   }
-  const out = { prompts: [] as string[], tools: [] as string[], cwd: undefined as string | undefined }
+  const out: ParsedLine = { prompts: [], tools: [] }
   if (typeof entry.project === 'string') out.cwd = entry.project
-  if (typeof entry.display === 'string' && entry.display.trim()) out.prompts.push(entry.display)
+  if (typeof entry.display === 'string' && entry.display.trim()) {
+    out.prompts.push(entry.display)
+    out.hour = hourOf(entry.timestamp)
+  }
   return out
 }
 
 /** The shipped parser table: adapter id → line parser. */
-export const defaultParsers: Record<string, (line: string) => { prompts: string[]; tools: string[]; cwd?: string }> = {
+export const defaultParsers: Record<string, (line: string) => ParsedLine> = {
   'claude-code': parseClaudeLine,
   codex: parseCodexLine,
   pi: parsePiLine,
@@ -265,19 +299,20 @@ export async function collectTranscriptFiles(fs: FsLike, root: string): Promise<
 async function scanFile(
   fs: FsLike,
   path: string,
-  parse: (line: string) => { prompts: string[]; tools: string[]; cwd?: string },
+  parse: (line: string) => ParsedLine,
   limits: ScanLimits,
-): Promise<{ prompts: string[]; tools: string[]; slash: string[]; cwd?: string }> {
+): Promise<{ prompts: string[]; tools: string[]; slash: string[]; hours: number[]; cwd?: string }> {
   let text: string
   try {
     text = await fs.readText(path)
   } catch {
-    return { prompts: [], tools: [], slash: [] }
+    return { prompts: [], tools: [], slash: [], hours: [] }
   }
   if (text.length > limits.maxBytesPerFile) text = text.slice(0, limits.maxBytesPerFile)
   const prompts: string[] = []
   const tools: string[] = []
   const slash: string[] = []
+  const hours: number[] = []
   let cwd: string | undefined
   for (const line of text.split('\n')) {
     if (!line) continue
@@ -285,12 +320,15 @@ async function scanFile(
     if (parsed.cwd && !cwd) cwd = parsed.cwd
     for (const t of parsed.tools) tools.push(t)
     for (const p of parsed.prompts) {
-      if (prompts.length < limits.maxPrompts) prompts.push(p)
+      if (prompts.length < limits.maxPrompts) {
+        prompts.push(p)
+        if (parsed.hour !== undefined) hours.push(parsed.hour)
+      }
       const cmd = extractSlashCommand(p)
       if (cmd) slash.push(cmd)
     }
   }
-  return { prompts, tools, slash, cwd }
+  return { prompts, tools, slash, hours, cwd }
 }
 
 /**
@@ -301,7 +339,7 @@ async function scanFile(
 export async function scanSources(
   fs: FsLike,
   roots: Record<string, string>,
-  parsers: Record<string, (line: string) => { prompts: string[]; tools: string[]; cwd?: string }>,
+  parsers: Record<string, (line: string) => ParsedLine>,
   limits: ScanLimits = defaultLimits,
 ): Promise<SourceEvidence[]> {
   const names = Object.keys(roots).filter(n => parsers[n])
@@ -318,12 +356,14 @@ export async function scanSources(
       toolCalls: [],
       slashCommands: [],
       cwds: [],
+      messageHours: [],
       filesScanned: files.length,
     }
     for (const r of perFile) {
       if (r.cwd) evidence.cwds.push(r.cwd)
       evidence.toolCalls.push(...r.tools)
       evidence.slashCommands.push(...r.slash)
+      evidence.messageHours.push(...r.hours)
       evidence.prompts.push(...r.prompts)
     }
     evidence.prompts = evidence.prompts.slice(0, limits.maxPrompts)

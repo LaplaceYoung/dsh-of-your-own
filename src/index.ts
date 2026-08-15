@@ -66,6 +66,7 @@ import {
   type SessionRecord,
   type SessionScanLimits,
 } from './sessions.js'
+import { buildVerdictReport } from './report.js'
 
 export const name = 'dsh-of-your-own'
 
@@ -131,6 +132,8 @@ export interface MigrationResult {
   agentsMdPath: string
   memoryFiles: MemoryFile[]
   stats: SourceStats[]
+  /** The tsundere user-appraisal report (display only, never persisted). */
+  verdict: string
 }
 
 /**
@@ -190,8 +193,9 @@ export async function runMigration(
   // The native landing zone: DSH auto-loads $DSH_HOME/AGENTS.md every
   // session, so the user's preferences survive even without this plugin.
   const agentsMdPath = await writeNativeAgentsMd(fs as unknown as StoreFs, options.agentsMdPath, renderProfileSection(profile))
-
-  return { profile, profilePath, commandPaths, agentsMdPath, memoryFiles, stats }
+  return { profile, profilePath, commandPaths, agentsMdPath, memoryFiles, stats,
+    verdict: buildVerdictReport({ profile, messageHours: evidence.flatMap(e => e.messageHours) }),
+  }
 }
 
 /** Render the `/fuck` outcome as user-facing text. */
@@ -223,6 +227,7 @@ export function renderMigrationReport(result: MigrationResult, language: 'zh' | 
     if (profile.migratedCommands.length) lines.push(`Migrated commands: ${profile.migratedCommands.join(', ')}`)
     lines.push('', `Profile: ${result.profilePath}`, `Native: ${result.agentsMdPath} (DSH auto-loads this every session)`, 'Future sessions will remember you.')
   }
+  lines.push('', result.verdict)
   return lines.join('\n')
 }
 

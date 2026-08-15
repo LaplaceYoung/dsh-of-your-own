@@ -80,9 +80,13 @@ describe('sources: line parsers', () => {
     expect(parsePiLine(user).prompts).toEqual(['字符串内容'])
   })
 
-  it('parses Claude Code history.jsonl display+project lines', () => {
-    const line = JSON.stringify({ display: '/model', project: '/Users/x/proj', timestamp: 1 })
-    expect(parseClaudeHistoryLine(line)).toEqual({ prompts: ['/model'], tools: [], cwd: '/Users/x/proj' })
+  it('parses Claude Code history.jsonl display+project lines and captures the hour', () => {
+    const line = JSON.stringify({ display: '/model', project: '/Users/x/proj', timestamp: '2026-08-13T14:05:00Z' })
+    const parsed = parseClaudeHistoryLine(line)
+    expect(parsed.prompts).toEqual(['/model'])
+    expect(parsed.tools).toEqual([])
+    expect(parsed.cwd).toBe('/Users/x/proj')
+    expect(parsed.hour).toBe(new Date('2026-08-13T14:05:00Z').getHours())
   })
 })
 

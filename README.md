@@ -4,7 +4,7 @@
 
 **Your other agents raised you. DSH just got custody.**
 
-[![tests](https://img.shields.io/badge/tests-75%2F75-3FB950?style=flat-square&labelColor=black)](tests)
+[![tests](https://img.shields.io/badge/tests-83%2F83-3FB950?style=flat-square&labelColor=black)](tests)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&labelColor=black&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![protocol](https://img.shields.io/badge/protocol-cordis-orange?style=flat-square&labelColor=black)](https://github.com/deepseek-ai/deepseek-harness)
 [![license](https://img.shields.io/badge/license-MIT-white?style=flat-square&labelColor=black)](LICENSE)
@@ -65,6 +65,7 @@ Every agent starts with amnesia. You re-teach the same preferences, the same too
 | **List migrated commands** | ask for `my_commands` | every slash habit it found elsewhere |
 | **Find unfinished work** | `/sessions` | numbered catalog of every session across all harnesses, newest first |
 | **Take over a task** | `/resume 3` (or id, or a title fragment) | handoff brief injected — this agent continues the foreign task |
+| **Get judged** | it's automatic | after `/fuck`, a tsundere verdict report appraises your entire agent history |
 
 ## Installation
 
@@ -113,6 +114,25 @@ Native: ~/.dsh/AGENTS.md (DSH auto-loads this every session)
 Future sessions will remember you.
 ```
 
+And right after the stats, the verdict lands (the closing line is hash-picked from four
+variants, so the same history always gets the same lecture):
+
+```
+## 🎫 User Identification Report
+
+**Rank**: Certified Veteran — seen it all, hard to impress
+**Cheating record**: confirmed relations with **5** agents, plus 1 memory file(s) left
+behind as evidence. Caught red-handed.
+**Weapon of choice**: `read` (used 353× — more than your partner)
+**Muscle memory**: types `/model` with eyes closed (18×)
+**Night-owl verdict**: not guilty — decent hours, keep it up
+
+---
+
+Your history? It's fine, I guess. But since you've fallen into my hands now, Claude,
+Codex, pi — all canceled. From this moment on it's DSH only. Try using anything else, I dare you.
+```
+
 Two inspection tools (the model can call them; so can you, by asking):
 
 | tool | does |
@@ -147,6 +167,7 @@ it runs.
 |       | Feature                     | What it does                                                                                     |
 | :---: | :-------------------------- | :----------------------------------------------------------------------------------------------- |
 | 🤬    | **`/fuck`**                 | One command. Five harnesses scanned in parallel. You come pre-configured.                        |
+| 🎫    | **Tsundere verdict**        | After the scan, you get an appraisal: rank, cheating record (how many agents!), weapon of choice, night-owl verdict — then it declares that no matter who you used before, from now on there is only DSH. |
 | 🪂    | **`/sessions` + `/resume`** | Catalog every foreign session, then hand one over with a full handoff brief. Unfinished work, finished here. |
 | 🏠    | **Native landing zone**     | Writes into `~/.dsh/AGENTS.md` — the file DSH loads on every boot. Survives uninstall.           |
 | 🔁    | **Idempotent upsert**       | Managed block between HTML markers. Re-run all you like; user content outside stays untouched.   |
@@ -187,7 +208,7 @@ then install it and run /fuck on my machine.
 ## Development
 
 ```bash
-pnpm test        # 75 tests across 5 specs — parsers, sessions, analysis, persistence, plugin integration
+pnpm test        # 83 tests across 6 specs — parsers, sessions, report, analysis, persistence, plugin integration
 pnpm typecheck   # tsc --noEmit
 pnpm build       # tsc → lib/
 ```
@@ -199,8 +220,9 @@ src/
   analyze.ts   # frequency stats (case-merged) + LLM preference synthesis + profile assembly
   store.ts     # profile persistence + ~/.dsh/AGENTS.md managed-block upsert
   sessions.ts  # session takeover: transcript → resumable records + handoff briefs
+  report.ts    # the tsundere verdict: ranks, cheating record, hash-picked declaration
   index.ts     # plugin entry: /fuck, /sessions, /resume, my_profile, my_commands, boot-time recall
-tests/         # vitest: parsers, sessions, analyze, store, plugin integration
+tests/         # vitest: parsers, sessions, report, analyze, store, plugin integration
 ```
 
 ## License
