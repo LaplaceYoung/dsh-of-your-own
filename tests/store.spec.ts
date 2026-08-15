@@ -6,6 +6,8 @@ import {
   saveProfile,
   serializeProfile,
   upsertAgentsBlock,
+  removeManagedBlock,
+  eraseAll,
   writeNativeAgentsMd,
   AGENTS_MANAGED_BEGIN,
   AGENTS_MANAGED_END,
@@ -104,5 +106,48 @@ describe('store: native AGENTS.md managed block', () => {
     const text = await fs.readText('/home/.dsh/AGENTS.md')
     expect(text).toContain('second run')
     expect(text).not.toContain('first run')
+  })
+})
+
+describe('store: forgetting', () => {
+  it('removeManagedBlock strips the block but keeps surrounding content', () => {
+    const withBlock = upsertAgentsBlock('# My rules\nkeep me\n', 'learned')
+    const cleaned = removeManagedBlock(withBlock)
+    expect(cleaned).toContain('# My rules')
+    expect(cleaned).toContain('keep me')
+    expect(cleaned).not.toContain(AGENTS_MANAGED_BEGIN)
+    expect(cleaned).not.toContain('learned')
+  })
+
+  it('removeManagedBlock is a no-op without a complete block', () => {
+    const noBlock = '# just my notes\n'
+    expect(removeManagedBlock(noBlock)).toBe(noBlock)
+    const partial = `${AGENTS_MANAGED_BEGIN}\nno end marker`
+    expect(removeManagedBlock(partial)).toBe(partial)
+  })
+
+  it('eraseAll strips the block and deletes the store dir', async () => {
+    const fs = new MemFs()
+    await writeNativeAgentsMd(fs as never, '/home/.dsh/AGENTS.md', 'learned')
+    await fs.writeText('/home/.dsh/of-your-own/profile.json', '{}')
+    const result = await eraseAll(fs as never, '/home/.dsh/AGENTS.md', '/home/.dsh/of-your-own')
+    expect(result).toEqual({ agentsStripped: true, storeRemoved: true })
+    expect(await fs.exists('/home/.dsh/of-your-own')).toBe(false)
+    // Empty remainder → the whole file is removed.
+    expect(await fs.exists('/home/.dsh/AGENTS.md')).toBe(false)
+  })
+
+  it('eraseAll preserves user content and is idempotent', async () => {
+    const fs = new MemFs()
+    await writeNativeAgentsMd(fs as never, '/home/.dsh/AGENTS.md', 'learned')
+    const withUser = `# user header\n${await fs.readText('/home/.dsh/AGENTS.md')}`
+    await fs.writeText('/home/.dsh/AGENTS.md', withUser)
+
+    const first = await eraseAll(fs as never, '/home/.dsh/AGENTS.md', '/home/.dsh/of-your-own')
+    expect(first.agentsStripped).toBe(true)
+    expect(await fs.readText('/home/.dsh/AGENTS.md')).toContain('# user header')
+
+    const second = await eraseAll(fs as never, '/home/.dsh/AGENTS.md', '/home/.dsh/of-your-own')
+    expect(second).toEqual({ agentsStripped: false, storeRemoved: false })
   })
 })

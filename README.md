@@ -4,7 +4,7 @@
 
 **Your other agents raised you. DSH just got custody.**
 
-[![tests](https://img.shields.io/badge/tests-83%2F83-3FB950?style=flat-square&labelColor=black)](tests)
+[![tests](https://img.shields.io/badge/tests-95%2F95-3FB950?style=flat-square&labelColor=black)](tests)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&labelColor=black&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![protocol](https://img.shields.io/badge/protocol-cordis-orange?style=flat-square&labelColor=black)](https://github.com/deepseek-ai/deepseek-harness)
 [![license](https://img.shields.io/badge/license-MIT-white?style=flat-square&labelColor=black)](LICENSE)
@@ -66,6 +66,7 @@ Every agent starts with amnesia. You re-teach the same preferences, the same too
 | **Find unfinished work** | `/sessions` | numbered catalog of every session across all harnesses, newest first |
 | **Take over a task** | `/resume 3` (or id, or a title fragment) | handoff brief injected — this agent continues the foreign task |
 | **Get judged** | it's automatic | after `/fuck`, a tsundere verdict report appraises your entire agent history |
+| **Get un-haunted** | `/forget` | strips the managed block and deletes the profile — a clean exit door |
 
 ## Installation
 
@@ -96,6 +97,7 @@ Or apply [`cordis.patch.yml`](cordis.patch.yml) and call it a day.
 /fuck                  # full migration: parallel scan → analyze → native migrate
 /sessions              # catalog every resumable session from all harnesses, newest first
 /resume <#|id|title>   # hand that foreign task over to this agent, context included
+/forget                # erase everything this plugin wrote (managed block + store), idempotent
 ```
 
 Real output from a real laptop with five harnesses of accumulated habits:
@@ -114,8 +116,9 @@ Native: ~/.dsh/AGENTS.md (DSH auto-loads this every session)
 Future sessions will remember you.
 ```
 
-And right after the stats, the verdict lands (the closing line is hash-picked from four
-variants, so the same history always gets the same lecture):
+And right after the stats, the verdict lands — tool school, activity rhythm, battlegrounds,
+and a closing line that's hash-picked from four variants (or written by your LLM when one is
+configured), so the same history always gets the same lecture:
 
 ```
 ## 🎫 User Identification Report
@@ -123,8 +126,13 @@ variants, so the same history always gets the same lecture):
 **Rank**: Certified Veteran — seen it all, hard to impress
 **Cheating record**: confirmed relations with **5** agents, plus 1 memory file(s) left
 behind as evidence. Caught red-handed.
-**Weapon of choice**: `read` (used 353× — more than your partner)
-**Muscle memory**: types `/model` with eyes closed (18×)
+**Tool school**: Human Index — reads everything before touching anything
+**Weapon of choice**: `read` (used 390× — more than your partner)
+**Muscle memory**: types `/model` with eyes closed (19×)
+**Battlegrounds**: `~/Desktop/dsh 1`, `~/Desktop/sos/directorx`, `~/Desktop/hub`
+**Activity rhythm**:
+▁▄▂▁····▃▁▂▅▂▅█▄▂█▄▁▄▃▃▃
+00:00        06:00        12:00        18:00
 **Night-owl verdict**: not guilty — decent hours, keep it up
 
 ---
@@ -167,7 +175,8 @@ it runs.
 |       | Feature                     | What it does                                                                                     |
 | :---: | :-------------------------- | :----------------------------------------------------------------------------------------------- |
 | 🤬    | **`/fuck`**                 | One command. Five harnesses scanned in parallel. You come pre-configured.                        |
-| 🎫    | **Tsundere verdict**        | After the scan, you get an appraisal: rank, cheating record (how many agents!), weapon of choice, night-owl verdict — then it declares that no matter who you used before, from now on there is only DSH. |
+| 🎫    | **Tsundere verdict**        | After the scan: rank, cheating record, tool school, weapon of choice, activity histogram, battlegrounds, night-owl verdict — then it declares that no matter who you used before, from now on there is only DSH. |
+| 🧹    | **`/forget`**               | One command erases every trace this plugin left: managed block stripped, store deleted. Idempotent. Privacy door included. |
 | 🪂    | **`/sessions` + `/resume`** | Catalog every foreign session, then hand one over with a full handoff brief. Unfinished work, finished here. |
 | 🏠    | **Native landing zone**     | Writes into `~/.dsh/AGENTS.md` — the file DSH loads on every boot. Survives uninstall.           |
 | 🔁    | **Idempotent upsert**       | Managed block between HTML markers. Re-run all you like; user content outside stays untouched.   |
@@ -208,7 +217,7 @@ then install it and run /fuck on my machine.
 ## Development
 
 ```bash
-pnpm test        # 83 tests across 6 specs — parsers, sessions, report, analysis, persistence, plugin integration
+pnpm test        # 95 tests across 6 specs — parsers, sessions, report, analysis, persistence, plugin integration
 pnpm typecheck   # tsc --noEmit
 pnpm build       # tsc → lib/
 ```
@@ -220,7 +229,7 @@ src/
   analyze.ts   # frequency stats (case-merged) + LLM preference synthesis + profile assembly
   store.ts     # profile persistence + ~/.dsh/AGENTS.md managed-block upsert
   sessions.ts  # session takeover: transcript → resumable records + handoff briefs
-  report.ts    # the tsundere verdict: ranks, cheating record, hash-picked declaration
+  report.ts    # the tsundere verdict: ranks, tool schools, rhythm histogram, LLM-written closer
   index.ts     # plugin entry: /fuck, /sessions, /resume, my_profile, my_commands, boot-time recall
 tests/         # vitest: parsers, sessions, report, analyze, store, plugin integration
 ```

@@ -53,6 +53,7 @@ import {
   loadProfile,
   nodeFsFallback,
   saveProfile,
+  eraseAll,
   writeNativeAgentsMd,
   type FsLike as StoreFs,
   type MigratedCommand,
@@ -66,7 +67,7 @@ import {
   type SessionRecord,
   type SessionScanLimits,
 } from './sessions.js'
-import { buildVerdictReport } from './report.js'
+import { buildVerdictReport, rankUser, synthesizeTsundereCloser, toolSchool } from './report.js'
 
 export const name = 'dsh-of-your-own'
 
@@ -193,8 +194,23 @@ export async function runMigration(
   // The native landing zone: DSH auto-loads $DSH_HOME/AGENTS.md every
   // session, so the user's preferences survive even without this plugin.
   const agentsMdPath = await writeNativeAgentsMd(fs as unknown as StoreFs, options.agentsMdPath, renderProfileSection(profile))
+  // Verdict report — with an LLM-written declaration when a model is configured.
+  const messageHours = evidence.flatMap(e => e.messageHours)
+  const activity = profile.sources.reduce((n, s) => n + s.promptCount, 0) + profile.toolHabits.reduce((n, t) => n + t.count, 0)
+  let closerOverride: string | undefined
+  if (options.llm) {
+    try {
+      const text = await synthesizeTsundereCloser(options.llm, {
+        rank: rankUser(activity, profile.language).rank,
+        school: toolSchool(profile, profile.language).name,
+        topTool: profile.toolHabits[0]?.name,
+        harnessCount: profile.sources.length,
+      }, profile.language, { provider: options.provider, model: options.model })
+      if (text) closerOverride = text
+    } catch { /* fall back to the hash-picked pool */ }
+  }
   return { profile, profilePath, commandPaths, agentsMdPath, memoryFiles, stats,
-    verdict: buildVerdictReport({ profile, messageHours: evidence.flatMap(e => e.messageHours) }),
+    verdict: buildVerdictReport({ profile, messageHours, closerOverride }),
   }
 }
 
@@ -302,6 +318,25 @@ export function apply(ctx: Context, config: Config = {}) {
           return { kind: 'success', text: renderMigrationReport(result, result.profile.language) }
         } catch (err) {
           return { kind: 'error', text: `Migration failed: ${err instanceof Error ? err.message : String(err)}` }
+        }
+      },
+    }))
+
+    disposers.push(commands.register({
+      name: 'forget',
+      description: 'Erase everything this plugin wrote: strip the managed block from the native AGENTS.md and delete the stored profile. Idempotent.',
+      handler: async () => {
+        try {
+          const { agentsStripped, storeRemoved } = await eraseAll(fs() as StoreFs, agentsMdPath, storeDir)
+          if (!agentsStripped && !storeRemoved) {
+            return { kind: 'success', text: 'Nothing to forget — this plugin never wrote a profile here.' }
+          }
+          const bits: string[] = []
+          if (agentsStripped) bits.push(`managed block removed from ${agentsMdPath}`)
+          if (storeRemoved) bits.push(`store dir deleted: ${storeDir}`)
+          return { kind: 'success', text: `Forgotten: ${bits.join('; ')}. DSH no longer remembers you (until you run /fuck again).` }
+        } catch (err) {
+          return { kind: 'error', text: `Forget failed: ${err instanceof Error ? err.message : String(err)}` }
         }
       },
     }))

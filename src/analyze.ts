@@ -113,6 +113,48 @@ export interface UserProfile {
   migratedCommands: string[]
   /** Native memory files found in other harness homes (source + name). */
   memoryFiles: { source: string; name: string }[]
+  /** Tool calls aggregated into canonical families (shell/read/edit/…). */
+  toolFamilies: FreqEntry[]
+  /** Top working directories across all sources. */
+  topProjects: FreqEntry[]
+}
+
+/**
+ * Canonical tool families. Harnesses name the same capability differently
+ * (`Bash` vs `exec_command` vs `shell`); the family table merges them so
+ * the profile speaks one language.
+ */
+export const TOOL_FAMILIES: Record<string, string> = {
+  // shell
+  bash: 'shell', exec_command: 'shell', shell: 'shell', run_command: 'shell',
+  write_stdin: 'shell', powershell: 'shell', terminal: 'shell',
+  // read
+  read: 'read', view: 'read', cat: 'read', file_read: 'read', view_image: 'read',
+  // search
+  grep: 'search', search: 'search', glob: 'search', find: 'search', rg: 'search',
+  ast_grep: 'search', grep_app: 'search',
+  // edit
+  edit: 'edit', write: 'edit', apply_patch: 'edit', patch: 'edit', str_replace: 'edit',
+  file_edit: 'edit', file_write: 'edit', apply_diff: 'edit',
+  // web
+  webfetch: 'web', websearch: 'web', fetch: 'web', browser: 'web',
+  web_search: 'web', web_fetch: 'web',
+  // agent
+  agent: 'agent', task: 'agent', spawn: 'agent', subagent: 'agent',
+  // plan
+  todo: 'plan', todowrite: 'plan', todoread: 'plan', update_plan: 'plan', plan: 'plan',
+}
+
+/** Merge tool habits into family counts, most-used family first. */
+export function classifyToolFamilies(toolHabits: readonly FreqEntry[]): FreqEntry[] {
+  const counts = new Map<string, number>()
+  for (const t of toolHabits) {
+    const family = TOOL_FAMILIES[t.name] ?? 'other'
+    counts.set(family, (counts.get(family) ?? 0) + t.count)
+  }
+  return [...counts.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
 }
 
 /** Render a deterministic digest of the stats (no LLM needed). */
@@ -203,6 +245,7 @@ export function buildProfile(
 ): UserProfile {
   const toolHabits = frequency(stats.flatMap(s => s.topTools.flatMap(t => Array(t.count).fill(t.name) as string[])))
   const slashHabits = frequency(stats.flatMap(s => s.topSlashCommands.flatMap(c => Array(c.count).fill(c.name) as string[])))
+  const topProjects = frequency(stats.flatMap(s => s.topCwds.flatMap(c => Array(c.count).fill(c.name) as string[]))).slice(0, 5)
   const zhVotes = stats.filter(s => s.language === 'zh').reduce((n, s) => n + s.promptCount, 0)
   const total = Math.max(1, stats.reduce((n, s) => n + s.promptCount, 0))
   return {
@@ -215,6 +258,8 @@ export function buildProfile(
     preferences: preferences || buildPreferenceFallback(stats),
     migratedCommands: slashHabits.map(s => s.name),
     memoryFiles: memoryFiles.map(m => ({ source: m.source, name: m.name })),
+    toolFamilies: classifyToolFamilies(toolHabits),
+    topProjects,
   }
 }
 

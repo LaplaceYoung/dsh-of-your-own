@@ -241,7 +241,7 @@ describe('@dsh-external/dsh-of-your-own plugin', () => {
     expect(sp2.injected.some(e => e.name === 'user-preferences')).toBe(true)
   })
 
-  it('uses the LLM seam for preferences when configured', async () => {
+  it('uses the LLM seam for preferences and the verdict closer when configured', async () => {
     const { ctx } = await boot()
     await ctx.plugin(LlmStub)
     await ctx.plugin(plugin, { ...config, provider: 'deepseek-official', model: 'deepseek-v4-flash' })
@@ -249,8 +249,10 @@ describe('@dsh-external/dsh-of-your-own plugin', () => {
     const llm = ctx.get('llm') as unknown as LlmStub
 
     const result = await commands.registry.get('fuck')!.handler({ rawInput: '/fuck' })
-    expect(llm.calls).toHaveLength(1)
+    // Two LLM calls: preference synthesis, then the personalized closer.
+    expect(llm.calls).toHaveLength(2)
     expect(llm.calls[0]).toMatchObject({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+    expect(llm.calls[1]).toMatchObject({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
     expect(result.text).toContain('偏好中文简洁回复')
   })
 
@@ -332,5 +334,26 @@ describe('@dsh-external/dsh-of-your-own plugin', () => {
     const miss = await commands.registry.get('resume')!.handler({ rawInput: '/resume 不存在的任务xyz' })
     expect(miss.kind).toBe('error')
     expect(miss.text).toContain('No session matches')
+  })
+
+  it('/forget erases the managed block and the store', async () => {
+    const { ctx, fs } = await boot()
+    await ctx.plugin(plugin, config)
+    const commands = ctx.get('commands') as unknown as CommandsStub
+
+    // Migrate first so there is something to forget.
+    await commands.registry.get('fuck')!.handler({ rawInput: '/fuck' })
+    expect(await fs.mem.exists('/home/.dsh/AGENTS.md')).toBe(true)
+    expect(await fs.mem.exists('/home/.dsh/of-your-own')).toBe(true)
+
+    const result = await commands.registry.get('forget')!.handler({ rawInput: '/forget' })
+    expect(result.kind).toBe('success')
+    expect(result.text).toContain('Forgotten')
+    expect(await fs.mem.exists('/home/.dsh/AGENTS.md')).toBe(false)
+    expect(await fs.mem.exists('/home/.dsh/of-your-own')).toBe(false)
+
+    // Idempotent second run.
+    const again = await commands.registry.get('forget')!.handler({ rawInput: '/forget' })
+    expect(again.text).toContain('Nothing to forget')
   })
 })

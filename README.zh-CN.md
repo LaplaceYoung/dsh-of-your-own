@@ -4,7 +4,7 @@
 
 **别的 agent 把你养大的。DSH 只是接过了抚养权。**
 
-[![tests](https://img.shields.io/badge/tests-83%2F83-3FB950?style=flat-square&labelColor=black)](tests)
+[![tests](https://img.shields.io/badge/tests-95%2F95-3FB950?style=flat-square&labelColor=black)](tests)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&labelColor=black&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![protocol](https://img.shields.io/badge/protocol-cordis-orange?style=flat-square&labelColor=black)](https://github.com/deepseek-ai/deepseek-harness)
 [![license](https://img.shields.io/badge/license-MIT-white?style=flat-square&labelColor=black)](LICENSE)
@@ -66,6 +66,7 @@
 | **找没做完的活儿** | `/sessions` | 所有 harness 会话的编号清单，最新的排前面 |
 | **接管一个任务** | `/resume 3`（或 id、标题片段） | 交接简报注入——当前 agent 接着干那个外来任务 |
 | **被审判** | 自动的 | `/fuck` 之后附赠一份傲娇鉴定报告，点评你的整部 agent 史 |
+| **一键失忆** | `/forget` | 剥掉托管块、删掉档案——干净的退出门，幂等 |
 
 ## 安装
 
@@ -96,6 +97,7 @@ pnpm build
 /fuck                  # 全量迁移：并行扫描 → 分析 → 原生迁移
 /sessions              # 列出所有 harness 里可续跑的会话，最新的排前面
 /resume <#|id|标题片段>  # 把那个外来任务连上下文一起交给当前 agent
+/forget                # 擦掉本插件写过的一切（托管块 + 档案），幂等
 ```
 
 真机实测输出（一台攒了五个 harness 习惯的笔记本）：
@@ -114,15 +116,21 @@ Native: ~/.dsh/AGENTS.md (DSH auto-loads this every session)
 Future sessions will remember you.
 ```
 
-统计之后，鉴定报告紧随其后（结语按档案哈希从四条变体里选，同样的历史永远挨同样的训）：
+统计之后，鉴定报告紧随其后——修炼流派、作息直方图、主战场全都有。结语按档案哈希从四条
+变体里选（配了 LLM 时由模型亲自撰写），同样的历史永远挨同样的训：
 
 ```
 ## 🎫 用户鉴定报告
 
 **鉴定等级**：传世老登 —— 骨灰级用户，见多识广，很难哄
 **出轨记录**：经查实，该用户共交往过 **5** 个 agent，还留下 1 份记忆文件当证物。实锤，别狡辩。
-**本命法器**：`read`（共使用 353 次，比对象还勤）
-**肌肉记忆**：闭着眼睛都会敲 `/model`（18 次）
+**修炼流派**：人肉索引 —— 先读为敬，代码不读完一行不动手
+**本命法器**：`read`（共使用 390 次，比对象还勤）
+**肌肉记忆**：闭着眼睛都会敲 `/model`（19 次）
+**主战场**：`~/Desktop/dsh 1`、`~/Desktop/sos/directorx`、`~/Desktop/hub`
+**作息画像**：
+▁▄▂▁····▃▁▂▅▂▅█▄▂█▄▁▄▃▃▃
+00:00        06:00        12:00        18:00
 **夜猫子判定**：不成立，作息尚可，继续保持
 
 ---
@@ -163,7 +171,8 @@ Run `/resume <#>` to hand that task to this agent.
 |       | 特性                        | 干嘛的                                                                                     |
 | :---: | :-------------------------- | :----------------------------------------------------------------------------------------- |
 | 🤬    | **`/fuck`**                 | 一条命令。五个 harness 并行扫完。你带着出厂设置进场。                                       |
-| 🎫    | **傲娇鉴定报告**            | 扫完附赠点评：等级、出轨记录（谈过几个 agent！）、本命法器、夜猫子判定——最后傲娇宣布：不管以前你用谁，今后只有 DSH。 |
+| 🎫    | **傲娇鉴定报告**            | 扫完附赠点评：等级、出轨记录、修炼流派、本命法器、作息直方图、主战场、夜猫子判定——最后傲娇宣布：不管以前你用谁，今后只有 DSH。 |
+| 🧹    | **`/forget`**               | 一条命令擦掉本插件的全部痕迹：托管块剥除、档案删除。幂等。隐私逃生门已备好。                    |
 | 🪂    | **`/sessions` + `/resume`** | 编目所有外来会话，再把某一个连完整交接简报一起接过来。没做完的活儿，在这儿做完。               |
 | 🏠    | **原生落点**                | 写进 `~/.dsh/AGENTS.md`——DSH 每次开机加载的文件。卸载插件也带不走。                          |
 | 🔁    | **幂等更新**                | 托管块用 HTML 标记围栏。随便重跑，块外你自己写的内容一个字不动。                              |
@@ -204,7 +213,7 @@ Run `/resume <#>` to hand that task to this agent.
 ## 开发
 
 ```bash
-pnpm test        # 83 个测试，6 个 spec——解析器、会话接管、鉴定报告、分析、持久化、插件集成
+pnpm test        # 95 个测试，6 个 spec——解析器、会话接管、鉴定报告、分析、持久化、插件集成
 pnpm typecheck   # tsc --noEmit
 pnpm build       # tsc → lib/
 ```
@@ -216,7 +225,7 @@ src/
   analyze.ts   # 频率统计（大小写合并）+ LLM 偏好综合 + 档案组装
   store.ts     # 档案持久化 + ~/.dsh/AGENTS.md 托管块幂等写入
   sessions.ts  # 会话接管：transcript → 可续跑会话记录 + 交接简报
-  report.ts    # 傲娇鉴定报告：等级、出轨记录、哈希选定的宣誓
+  report.ts    # 傲娇鉴定报告：等级、修炼流派、作息直方图、LLM 撰写结语
   index.ts     # 插件入口：/fuck、/sessions、/resume、my_profile、my_commands、启动时记忆回读
 tests/         # vitest：解析器、会话、鉴定报告、分析、持久化、插件集成
 ```

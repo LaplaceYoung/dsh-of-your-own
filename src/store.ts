@@ -95,6 +95,53 @@ export async function writeNativeAgentsMd(
   return agentsPath
 }
 
+/**
+ * Remove the managed block from existing AGENTS.md content, preserving
+ * everything outside it (pure). Returns the content unchanged when no
+ * complete block is present.
+ */
+export function removeManagedBlock(existing: string): string {
+  const begin = existing.indexOf(AGENTS_MANAGED_BEGIN)
+  const end = existing.indexOf(AGENTS_MANAGED_END)
+  if (begin < 0 || end <= begin) return existing
+  let before = existing.slice(0, begin)
+  let after = existing.slice(end + AGENTS_MANAGED_END.length)
+  // Trim the seam so removal doesn't leave a gap of blank lines.
+  before = before.replace(/\n+$/, '\n')
+  after = after.replace(/^\n+/, '')
+  if (before === '\n' && !after) return ''
+  return before + after
+}
+
+/**
+ * Forget everything this plugin wrote: strip the managed block from the
+ * native AGENTS.md and delete the store dir. Idempotent — safe when
+ * nothing was ever migrated.
+ */
+export async function eraseAll(
+  fs: FsLike,
+  agentsPath: string,
+  storeDir: string,
+): Promise<{ agentsStripped: boolean; storeRemoved: boolean }> {
+  let agentsStripped = false
+  try {
+    const existing = await fs.readText(agentsPath)
+    const cleaned = removeManagedBlock(existing)
+    if (cleaned !== existing) {
+      agentsStripped = true
+      if (cleaned === '') await fs.remove(agentsPath)
+      else await fs.writeText(agentsPath, cleaned)
+    }
+  } catch { /* no AGENTS.md */ }
+
+  let storeRemoved = false
+  if (await fs.exists(storeDir)) {
+    await fs.remove(storeDir)
+    storeRemoved = true
+  }
+  return { agentsStripped, storeRemoved }
+}
+
 /** Serialize the profile (stable key order for diff-friendly files). */
 export function serializeProfile(profile: UserProfile): string {
   return `${JSON.stringify(profile, null, 2)}\n`
