@@ -100,44 +100,23 @@ pnpm build
 /forget                # 擦掉本插件写过的一切（托管块 + 档案），幂等
 ```
 
-真机实测输出（一台攒了五个 harness 习惯的笔记本）：
+真机实测输出（一台攒了五个 harness 习惯的笔记本）。`/fuck` 完成迁移，**并且**附赠傲娇
+鉴定报告——等级、修炼流派、作息直方图、主战场全都有。结语按档案哈希从四条变体里选
+（配了 LLM 时由模型亲自撰写），同样的历史永远挨同样的训：
 
-```
-## Migration complete
+![/fuck —— 迁移完成 + 用户鉴定报告](docs/shots/fuck.png)
 
-Scanned claude-code (20 sessions), codex (20 sessions), pi (7 sessions), omp (20 sessions),
-claude-history (1 sessions) — 423 user messages.
-Read 1 native memory file(s): codex/AGENTS.md
+`/sessions` 编目所有 harness 里可续跑的会话，最新的排前面：
 
-Tool habits: read×353, bash×274, exec_command×104, agent×16, edit×15, write×14, …
-Migrated commands: /model, /effort, /new, /compact, /clear, /domain-modeling, …
-Profile: ~/.dsh/of-your-own/profile.json
-Native: ~/.dsh/AGENTS.md (DSH auto-loads this every session)
-Future sessions will remember you.
-```
+![/sessions —— 续跑清单](docs/shots/sessions.png)
 
-统计之后，鉴定报告紧随其后——修炼流派、作息直方图、主战场全都有。结语按档案哈希从四条
-变体里选（配了 LLM 时由模型亲自撰写），同样的历史永远挨同样的训：
+`/resume <#|id|标题片段>` 把某个外来会话重建成交接简报并注入，当前 agent 从它停下的地方接着干：
 
-```
-## 🎫 用户鉴定报告
+![/resume —— 交接简报](docs/shots/resume.png)
 
-**鉴定等级**：传世老登 —— 骨灰级用户，见多识广，很难哄
-**出轨记录**：经查实，该用户共交往过 **5** 个 agent，还留下 1 份记忆文件当证物。实锤，别狡辩。
-**修炼流派**：人肉索引 —— 先读为敬，代码不读完一行不动手
-**本命法器**：`read`（共使用 390 次，比对象还勤）
-**肌肉记忆**：闭着眼睛都会敲 `/model`（19 次）
-**主战场**：`~/Desktop/dsh 1`、`~/Desktop/sos/directorx`、`~/Desktop/hub`
-**作息画像**：
-▁▄▂▁····▃▁▂▅▂▅█▄▂█▄▁▄▃▃▃
-00:00        06:00        12:00        18:00
-**夜猫子判定**：不成立，作息尚可，继续保持
+想退出的时候，`/forget` 剥掉托管块、删掉档案——幂等：
 
----
-
-哼，别误会，我才不是特意为你分析这些的……只是顺手而已。不过既然被我记住了，
-不管以前你用的是谁，今后都只能用 DSH。听懂了吗？不许再回头找它们。
-```
+![/forget —— 隐私逃生门](docs/shots/forget.png)
 
 两个检查工具（模型能调，你也可以直接开口要）：
 
@@ -148,19 +127,8 @@ Future sessions will remember you.
 
 ### 会话接管 —— 你没做完的活儿，在这儿接着干
 
-`/sessions` 并行读完所有 transcript 目录，渲染成一张编号清单：
-
-```
-## Resumable sessions (73)
-
-  #  source          title                                            dir            when      msgs
-  1  omp             Build standalone chat history plugin            ~/Desktop/dsh   3h ago    4
-  2  claude-history  /model                                          ~/Desktop/sos/  3h ago    3
-  3  codex           重构支付模块                                     ~/work/pay      2d ago    31
-… 还有 70 个
-
-Run `/resume <#>` to hand that task to this agent.
-```
+`/sessions` 并行读完所有 transcript 目录，渲染成一张编号清单（见上方截图——这台笔记本
+上有 177 个活跃会话）。
 
 `/resume` 按编号、session id 前缀或标题片段匹配。它把会话重建成交接简报——原始任务、工作
 目录、最近指令、停在哪一步、用过什么工具——注入系统提示词，当前 agent 接手即干。简报也会回显

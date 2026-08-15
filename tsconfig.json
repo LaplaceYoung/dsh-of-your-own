@@ -11,10 +11,7 @@
     "noImplicitAny": true,
     "rootDir": "src",
     "outDir": "lib",
-    "types": ["node"],
-    "paths": {
-      "@deepseek-ai/cordis": ["./types/cordis.d.ts"]
-    }
+    "types": ["node"]
   },
   "include": ["src"]
 }

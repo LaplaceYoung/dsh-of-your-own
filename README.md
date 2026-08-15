@@ -100,46 +100,25 @@ Or apply [`cordis.patch.yml`](cordis.patch.yml) and call it a day.
 /forget                # erase everything this plugin wrote (managed block + store), idempotent
 ```
 
-Real output from a real laptop with five harnesses of accumulated habits:
+Real output from a real laptop with five harnesses of accumulated habits — `/fuck` migrates
+everything **and** appends the tsundere verdict (rank, tool school, activity rhythm,
+battlegrounds, and a closing line that's hash-picked from four variants — or written by your
+LLM when one is configured — so the same history always gets the same lecture):
 
-```
-## Migration complete
+![/fuck — migration complete + user identification report](docs/shots/fuck.png)
 
-Scanned claude-code (20 sessions), codex (20 sessions), pi (7 sessions), omp (20 sessions),
-claude-history (1 sessions) — 423 user messages.
-Read 1 native memory file(s): codex/AGENTS.md
+`/sessions` catalogs every resumable session across all harnesses, newest first:
 
-Tool habits: read×353, bash×274, exec_command×104, agent×16, edit×15, write×14, …
-Migrated commands: /model, /effort, /new, /compact, /clear, /domain-modeling, …
-Profile: ~/.dsh/of-your-own/profile.json
-Native: ~/.dsh/AGENTS.md (DSH auto-loads this every session)
-Future sessions will remember you.
-```
+![/sessions — resume catalog](docs/shots/sessions.png)
 
-And right after the stats, the verdict lands — tool school, activity rhythm, battlegrounds,
-and a closing line that's hash-picked from four variants (or written by your LLM when one is
-configured), so the same history always gets the same lecture:
+`/resume <#|id|title>` rebuilds one foreign session into a handoff brief and injects it, so
+this agent picks the task up where it stopped:
 
-```
-## 🎫 User Identification Report
+![/resume — handoff brief](docs/shots/resume.png)
 
-**Rank**: Certified Veteran — seen it all, hard to impress
-**Cheating record**: confirmed relations with **5** agents, plus 1 memory file(s) left
-behind as evidence. Caught red-handed.
-**Tool school**: Human Index — reads everything before touching anything
-**Weapon of choice**: `read` (used 390× — more than your partner)
-**Muscle memory**: types `/model` with eyes closed (19×)
-**Battlegrounds**: `~/Desktop/dsh 1`, `~/Desktop/sos/directorx`, `~/Desktop/hub`
-**Activity rhythm**:
-▁▄▂▁····▃▁▂▅▂▅█▄▂█▄▁▄▃▃▃
-00:00        06:00        12:00        18:00
-**Night-owl verdict**: not guilty — decent hours, keep it up
+And when you want out, `/forget` strips the managed block and deletes the store — idempotent:
 
----
-
-Your history? It's fine, I guess. But since you've fallen into my hands now, Claude,
-Codex, pi — all canceled. From this moment on it's DSH only. Try using anything else, I dare you.
-```
+![/forget — privacy exit](docs/shots/forget.png)
 
 Two inspection tools (the model can call them; so can you, by asking):
 
@@ -150,19 +129,8 @@ Two inspection tools (the model can call them; so can you, by asking):
 
 ### Session takeover — your unfinished work, continued here
 
-`/sessions` reads every transcript directory in parallel and renders one numbered catalog:
-
-```
-## Resumable sessions (73)
-
-  #  source          title                                            dir            when      msgs
-  1  omp             Build standalone chat history plugin            ~/Desktop/dsh   3h ago    4
-  2  claude-history  /model                                          ~/Desktop/sos/  3h ago    3
-  3  codex           重构支付模块                                     ~/work/pay      2d ago    31
-… 70 more
-
-Run `/resume <#>` to hand that task to this agent.
-```
+`/sessions` reads every transcript directory in parallel and renders one numbered catalog
+(see the screenshot above — 177 live sessions on this laptop).
 
 `/resume` matches by list number, session-id prefix, or a fragment of the title. It rebuilds the
 session into a handoff brief — original task, working directory, most recent direction, where it

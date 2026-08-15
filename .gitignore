@@ -2,3 +2,7 @@ node_modules/
 lib/
 *.tsbuildinfo
 .DS_Store
+# e2e live artifacts
+e2e/live-results.json
+# shot build intermediates (keep the committed PNGs)
+docs/shots/html/
