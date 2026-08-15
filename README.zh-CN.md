@@ -100,23 +100,20 @@ pnpm build
 /forget                # 擦掉本插件写过的一切（托管块 + 档案），幂等
 ```
 
-真机实测输出（一台攒了五个 harness 习惯的笔记本）。`/fuck` 完成迁移，**并且**附赠傲娇
-鉴定报告——等级、修炼流派、作息直方图、主战场全都有。结语按档案哈希从四条变体里选
-（配了 LLM 时由模型亲自撰写），同样的历史永远挨同样的训：
+真实 DSH Web UI 截图（插件已挂载）。`/fuck` 完成迁移，**并且**附赠傲娇鉴定报告——等级、
+修炼流派、作息直方图、主战场全都有。结语按档案哈希从四条变体里选（配了 LLM 时由模型亲自
+撰写），同样的历史永远挨同样的训：
 
-![/fuck —— 迁移完成 + 用户鉴定报告](docs/shots/fuck.png)
+![/fuck 在 DSH Web UI —— 迁移完成 + 用户鉴定报告](docs/shots/fuck.png)
 
 `/sessions` 编目所有 harness 里可续跑的会话，最新的排前面：
 
-![/sessions —— 续跑清单](docs/shots/sessions.png)
+![/sessions 在 DSH Web UI —— 续跑清单](docs/shots/sessions.png)
 
-`/resume <#|id|标题片段>` 把某个外来会话重建成交接简报并注入，当前 agent 从它停下的地方接着干：
+`/resume <#|id|标题片段>` 把某个外来会话重建成交接简报并注入，当前 agent 从它停下的地方
+接着干（通过命令面调用后跟随提示）。想退出的时候，`/forget` 剥掉托管块、删掉档案——幂等：
 
-![/resume —— 交接简报](docs/shots/resume.png)
-
-想退出的时候，`/forget` 剥掉托管块、删掉档案——幂等：
-
-![/forget —— 隐私逃生门](docs/shots/forget.png)
+![/forget 在 DSH Web UI —— 隐私逃生门](docs/shots/forget.png)
 
 两个检查工具（模型能调，你也可以直接开口要）：
 

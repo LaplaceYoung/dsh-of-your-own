@@ -271,7 +271,24 @@ export function apply(ctx: Context, config: Config = {}) {
       if (!(config.disabledSources ?? []).includes(id)) enabled[id] = root
     }
     const disposers: (() => void)[] = []
-    const fs = (): FS => ((ctx.get('fs') as FS | undefined) ?? nodeFsFallback() as FS)
+    /**
+     * Resolve the fs seam. DSH's own `ctx.fs` has a target-object API
+     * (`readText(target)`) that does not match this plugin's path-string
+     * FsLike — using it blindly breaks at runtime (`fs.exists is not a
+     * function`). Only adopt the seam when it exposes every FsLike method;
+     * otherwise the plugin reads/writes its own store and transcripts with
+     * plain node:fs, which is what the harness actually runs.
+     */
+    const fs = (): FS => {
+      const seam = ctx.get('fs') as Partial<FS> | undefined
+      const usable = seam !== undefined
+        && typeof seam.readText === 'function'
+        && typeof seam.writeText === 'function'
+        && typeof seam.listDir === 'function'
+        && typeof seam.exists === 'function'
+        && typeof seam.remove === 'function'
+      return usable ? seam as FS : nodeFsFallback() as FS
+    }
 
     // --- remember on demand: inject the profile into the prompt ------------
     let injectProfile = (profile: UserProfile): void => {

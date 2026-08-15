@@ -100,25 +100,23 @@ Or apply [`cordis.patch.yml`](cordis.patch.yml) and call it a day.
 /forget                # erase everything this plugin wrote (managed block + store), idempotent
 ```
 
-Real output from a real laptop with five harnesses of accumulated habits — `/fuck` migrates
+Real screenshots from the actual DSH web UI, with the plugin mounted — `/fuck` migrates
 everything **and** appends the tsundere verdict (rank, tool school, activity rhythm,
 battlegrounds, and a closing line that's hash-picked from four variants — or written by your
 LLM when one is configured — so the same history always gets the same lecture):
 
-![/fuck — migration complete + user identification report](docs/shots/fuck.png)
+![/fuck in the DSH web UI — migration complete + user identification report](docs/shots/fuck.png)
 
 `/sessions` catalogs every resumable session across all harnesses, newest first:
 
-![/sessions — resume catalog](docs/shots/sessions.png)
+![/sessions in the DSH web UI — resume catalog](docs/shots/sessions.png)
 
 `/resume <#|id|title>` rebuilds one foreign session into a handoff brief and injects it, so
-this agent picks the task up where it stopped:
+this agent picks the task up where it stopped (invoke it through the command surface, then
+follow the prompt). And when you want out, `/forget` strips the managed block and deletes
+the store — idempotent:
 
-![/resume — handoff brief](docs/shots/resume.png)
-
-And when you want out, `/forget` strips the managed block and deletes the store — idempotent:
-
-![/forget — privacy exit](docs/shots/forget.png)
+![/forget in the DSH web UI — privacy exit](docs/shots/forget.png)
 
 Two inspection tools (the model can call them; so can you, by asking):
 
