@@ -4,9 +4,9 @@
 
 **别的 agent 把你养大的。DSH 只是接过了抚养权。**
 
-[![tests](https://img.shields.io/badge/tests-103%2F103-3FB950?style=flat-square&labelColor=black)](tests)
+[![tests](https://img.shields.io/badge/tests-104%2F104-3FB950?style=flat-square&labelColor=black)](tests)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&labelColor=black&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![dsh](https://img.shields.io/badge/dsh-0.1.1--rc.2-orange?style=flat-square&labelColor=black)](https://github.com/deepseek-ai/deepseek-harness)
+[![dsh](https://img.shields.io/badge/dsh-0.1.2--alpha.1-orange?style=flat-square&labelColor=black)](https://github.com/deepseek-ai/deepseek-harness)
 [![license](https://img.shields.io/badge/license-MIT-white?style=flat-square&labelColor=black)](LICENSE)
 
 [English](README.md) | [简体中文](README.zh-CN.md)
@@ -70,7 +70,7 @@
 
 ## 安装
 
-需要 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) `>=0.1.1-rc.2`（包里声明了 `dsh.bundle`，`dsh plugin add` 才会把这一层真正编进配置树）。
+需要 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) `>=0.1.2-alpha.1`（包里声明了 `dsh.bundle`，`dsh plugin add` 才会把这一层真正编进配置树）。`0.1.2-alpha.1` 是当前 GitHub tag（`dsh-v0.1.2-alpha.1`），还没上 npm，请从该检出运行 DSH。
 
 ```bash
 # 本地检出
@@ -198,7 +198,7 @@ dsh --profile web --dump-config   # 找 "# == @dsh-external/dsh-of-your-own"
 ## 开发
 
 ```bash
-pnpm test        # 103 个测试，7 个 spec——解析器、会话接管、鉴定报告、分析、持久化、插件集成、DSH 清单
+pnpm test        # 104 个测试，7 个 spec——解析器、会话接管、鉴定报告、分析、持久化、插件集成、DSH 清单
 pnpm typecheck   # tsc --noEmit
 pnpm build       # tsc → lib/
 ```
