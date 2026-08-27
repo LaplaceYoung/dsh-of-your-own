@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context, Service } from '@deepseek-ai/cordis'
 import * as plugin from '../src/index.ts'
+import { PLUGIN_SECTION_ORDER } from '../src/index.ts'
 import { AGENTS_MANAGED_BEGIN } from '../src/store.ts'
 import { MemFs } from './memfs.ts'
 
@@ -26,7 +27,7 @@ class ToolsStub extends Service {
   }
 }
 
-/** Minimal `ctx.systemPrompt` stub: `section` is the 0.1.1+ seam; `context` remains as fallback. */
+/** Minimal `ctx.systemPrompt` stub: `section` is the 0.1.1+ durable seam; `context` remains as fallback. */
 class SystemPromptStub extends Service {
   static inject: string[] = []
   injected: { name: string; order: number; text: string }[] = []
@@ -149,8 +150,10 @@ describe('@dsh-external/dsh-of-your-own plugin', () => {
     // Command stubs migrated.
     expect(await fs.mem.readText('/home/.dsh/of-your-own/commands/review.md')).toContain('# /review')
 
-    // Preferences injected into the system prompt.
-    expect(sp.injected.some(e => e.name === 'user-preferences')).toBe(true)
+    // Preferences injected into the system prompt in the 0.1.2+ identity band.
+    const prefs = sp.injected.find(e => e.name === 'user-preferences')
+    expect(prefs).toBeDefined()
+    expect(prefs!.order).toBe(PLUGIN_SECTION_ORDER.USER_PREFERENCES)
   })
 
   it('re-running /fuck upserts the managed block without duplication', async () => {
@@ -309,6 +312,7 @@ describe('@dsh-external/dsh-of-your-own plugin', () => {
     // Brief injected so the agent continues the task this session.
     const resumed = sp.injected.find(e => e.name.startsWith('resumed-task-'))
     expect(resumed).toBeDefined()
+    expect(resumed!.order).toBe(PLUGIN_SECTION_ORDER.RESUMED_TASK)
     expect(resumed!.text).toContain('Original task: /review 这个改动')
     expect(resumed!.text).toContain('已定位到问题所在')
     expect(resumed!.text).toContain('Read×2')

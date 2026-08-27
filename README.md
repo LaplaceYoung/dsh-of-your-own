@@ -4,9 +4,9 @@
 
 **Your other agents raised you. DSH just got custody.**
 
-[![tests](https://img.shields.io/badge/tests-103%2F103-3FB950?style=flat-square&labelColor=black)](tests)
+[![tests](https://img.shields.io/badge/tests-104%2F104-3FB950?style=flat-square&labelColor=black)](tests)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&labelColor=black&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![dsh](https://img.shields.io/badge/dsh-0.1.1--rc.2-orange?style=flat-square&labelColor=black)](https://github.com/deepseek-ai/deepseek-harness)
+[![dsh](https://img.shields.io/badge/dsh-0.1.2--alpha.1-orange?style=flat-square&labelColor=black)](https://github.com/deepseek-ai/deepseek-harness)
 [![license](https://img.shields.io/badge/license-MIT-white?style=flat-square&labelColor=black)](LICENSE)
 
 [English](README.md) | [简体中文](README.zh-CN.md)
@@ -70,7 +70,7 @@ Every agent starts with amnesia. You re-teach the same preferences, the same too
 
 ## Installation
 
-Requires [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) `>=0.1.1-rc.2` (the package declares `dsh.bundle` so `dsh plugin add` actually joins the layer stack).
+Requires [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) `>=0.1.2-alpha.1` (the package declares `dsh.bundle` so `dsh plugin add` actually joins the layer stack). `0.1.2-alpha.1` is the current GitHub tag (`dsh-v0.1.2-alpha.1`); it is not on npm yet, so run DSH from that checkout.
 
 ```bash
 # from a local checkout
@@ -203,7 +203,7 @@ then install it and run /fuck on my machine.
 ## Development
 
 ```bash
-pnpm test        # 103 tests across 7 specs — parsers, sessions, report, analysis, persistence, plugin integration, DSH manifest
+pnpm test        # 104 tests across 7 specs — parsers, sessions, report, analysis, persistence, plugin integration, DSH manifest
 pnpm typecheck   # tsc --noEmit
 pnpm build       # tsc → lib/
 ```
