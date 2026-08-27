@@ -4,7 +4,7 @@
 
 **别的 agent 把你养大的。DSH 只是接过了抚养权。**
 
-[![tests](https://img.shields.io/badge/tests-99%2F99-3FB950?style=flat-square&labelColor=black)](tests)
+[![tests](https://img.shields.io/badge/tests-103%2F103-3FB950?style=flat-square&labelColor=black)](tests)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&labelColor=black&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![dsh](https://img.shields.io/badge/dsh-0.1.1--rc.2-orange?style=flat-square&labelColor=black)](https://github.com/deepseek-ai/deepseek-harness)
 [![license](https://img.shields.io/badge/license-MIT-white?style=flat-square&labelColor=black)](LICENSE)
@@ -198,7 +198,7 @@ dsh --profile web --dump-config   # 找 "# == @dsh-external/dsh-of-your-own"
 ## 开发
 
 ```bash
-pnpm test        # 99 个测试，7 个 spec——解析器、会话接管、鉴定报告、分析、持久化、插件集成、DSH 清单
+pnpm test        # 103 个测试，7 个 spec——解析器、会话接管、鉴定报告、分析、持久化、插件集成、DSH 清单
 pnpm typecheck   # tsc --noEmit
 pnpm build       # tsc → lib/
 ```

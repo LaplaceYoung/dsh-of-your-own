@@ -4,7 +4,7 @@
 
 **Your other agents raised you. DSH just got custody.**
 
-[![tests](https://img.shields.io/badge/tests-99%2F99-3FB950?style=flat-square&labelColor=black)](tests)
+[![tests](https://img.shields.io/badge/tests-103%2F103-3FB950?style=flat-square&labelColor=black)](tests)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&labelColor=black&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![dsh](https://img.shields.io/badge/dsh-0.1.1--rc.2-orange?style=flat-square&labelColor=black)](https://github.com/deepseek-ai/deepseek-harness)
 [![license](https://img.shields.io/badge/license-MIT-white?style=flat-square&labelColor=black)](LICENSE)
@@ -203,7 +203,7 @@ then install it and run /fuck on my machine.
 ## Development
 
 ```bash
-pnpm test        # 99 tests across 7 specs — parsers, sessions, report, analysis, persistence, plugin integration, DSH manifest
+pnpm test        # 103 tests across 7 specs — parsers, sessions, report, analysis, persistence, plugin integration, DSH manifest
 pnpm typecheck   # tsc --noEmit
 pnpm build       # tsc → lib/
 ```
