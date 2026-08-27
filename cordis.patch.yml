@@ -1,6 +1,6 @@
-# dsh-of-your-own bundle patch: mounts the plugin into any composition.
-# Apply via `cordis.patch.yml` (dsh.plugin.json `dsh.bundle.patch`) or by
-# appending this entry to your cordis.yml.
+# Bundle layer for dsh-of-your-own.
+# Joined automatically when a profile lists this package (`dsh.bundle.patch`).
+# Later layers (profile / $DSH_HOME / --patch) can replace this row by id.
 
 - insert:
     - id: dsh-of-your-own

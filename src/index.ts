@@ -10,15 +10,17 @@
  *   1. Writes a managed block into `$DSH_HOME/AGENTS.md` — the file DSH's
  *      workspace-context auto-loads on every session, plugin or not.
  *   2. Persists the full profile to `~/.dsh/of-your-own/profile.json`.
- *   3. Injects the learned preferences into `ctx.systemPrompt.context()`.
+ *   3. Injects the learned preferences into `ctx.systemPrompt.section()`
+ *      (falls back to `context()` on older hosts).
  *
  * Re-runs upsert the managed block; user-authored content outside the block
- * is never touched.
+ * is never touched. Re-injecting a same-named prompt contribution disposes
+ * the previous one first — DSH 0.1.1+ rejects duplicate names in one layer.
  *
  * Seams used (all documented DSH extension points, no skeleton edits):
  *   - `ctx.commands`   — registers `/fuck`
  *   - `ctx.tools`      — `my_profile` / `my_commands` inspection tools
- *   - `ctx.systemPrompt.context()` — learned-preferences section (optional)
+ *   - `ctx.systemPrompt.section()` — learned-preferences section (optional)
  *   - `ctx.llm`        — prose synthesis (optional; template fallback)
  *   - `ctx.fs`         — persistence (optional; node:fs fallback)
  *
@@ -74,7 +76,7 @@ export const name = 'dsh-of-your-own'
 /** Services required before this plugin can register. */
 export const inject = ['commands', 'tools']
 
-/** Plugin configuration (all knobs are cordis.yml-configurable). */
+/** Plugin configuration (all knobs are cordis.patch.yml-configurable). */
 export interface Config {
   /** Where the profile and migrated commands persist. */
   storeDir?: string
@@ -103,11 +105,13 @@ export interface Config {
   resumeOrder?: number
 }
 
-/** Structural mirror of the DSH command service. */
+/** Structural mirror of the DSH command service (0.1.1+ `input.hint`). */
 export interface CommandsService {
   register(def: {
     name: string
     description: string
+    input?: { hint?: string; images?: boolean }
+    recordInput?: boolean
     handler: (invocation: { rawInput: string }) => Promise<{ kind: string; text: string }>
   }): () => void
 }
@@ -117,9 +121,43 @@ export interface ToolsService {
   register(def: { name: string } & Record<string, unknown>): () => void
 }
 
-/** Structural mirror of the DSH system-prompt context seam. */
+/** One named prompt contribution (`section` or legacy `context`). */
+export interface PromptContribution {
+  name: string
+  order: number
+  text: string
+}
+
+/**
+ * Structural mirror of the DSH system-prompt seam.
+ * Latest DSH puts durable guidance on `section()`; `context()` is the
+ * dynamic runtime-snapshot API. Prefer section, fall back to context.
+ */
 export interface SystemPromptLike {
-  context?(entry: { name: string; order: number; text: string }): () => void
+  section?(entry: PromptContribution): () => void
+  context?(entry: PromptContribution): () => void
+}
+
+/**
+ * Contribute one named prompt entry. Latest DSH rejects duplicate names
+ * in a layer, so callers must dispose the previous contribution first.
+ */
+export function contributePrompt(
+  systemPrompt: SystemPromptLike | undefined,
+  entry: PromptContribution,
+): (() => void) | undefined {
+  if (!systemPrompt) return undefined
+  const contribute = systemPrompt.section ?? systemPrompt.context
+  if (typeof contribute !== 'function') return undefined
+  return contribute.call(systemPrompt, entry)
+}
+
+/**
+ * Strip a leading `/name` if present. Official DSH 0.1.1+ already hands
+ * handlers the argument tail; older hosts passed the full slash line.
+ */
+export function commandArg(rawInput: string | undefined, name: string): string {
+  return (rawInput ?? '').replace(new RegExp(`^/${name}\\b`, 'i'), '').trim()
 }
 
 /** Combined fs contract: sources and store use the same seam shape. */
@@ -291,17 +329,26 @@ export function apply(ctx: Context, config: Config = {}) {
     }
 
     // --- remember on demand: inject the profile into the prompt ------------
-    let injectProfile = (profile: UserProfile): void => {
-      void profile
+    // Latest DSH throws on duplicate section/context names in one layer, so
+    // a re-run (/fuck, my_profile refresh, boot recall) must replace.
+    let disposeProfile: (() => void) | undefined
+    const injectProfile = (profile: UserProfile): void => {
+      disposeProfile?.()
+      disposeProfile = contributePrompt(systemPrompt, {
+        name: 'user-preferences',
+        order: config.sectionOrder ?? 10,
+        text: renderProfileSection(profile),
+      })
     }
-    if (systemPrompt && typeof systemPrompt.context === 'function') {
-      injectProfile = (profile) => {
-        disposers.push(systemPrompt.context!({
-          name: 'user-preferences',
-          order: config.sectionOrder ?? 10,
-          text: renderProfileSection(profile),
-        }))
-      }
+    const resumeDisposers = new Map<string, () => void>()
+    const injectResume = (id: string, brief: string): void => {
+      resumeDisposers.get(id)?.()
+      const dispose = contributePrompt(systemPrompt, {
+        name: `resumed-task-${id}`,
+        order: config.resumeOrder ?? 15,
+        text: brief,
+      })
+      if (dispose) resumeDisposers.set(id, dispose)
     }
 
     // --- one in-flight migration at a time ---------------------------------
@@ -345,6 +392,10 @@ export function apply(ctx: Context, config: Config = {}) {
       handler: async () => {
         try {
           const { agentsStripped, storeRemoved } = await eraseAll(fs() as StoreFs, agentsMdPath, storeDir)
+          disposeProfile?.()
+          disposeProfile = undefined
+          for (const dispose of resumeDisposers.values()) dispose()
+          resumeDisposers.clear()
           if (!agentsStripped && !storeRemoved) {
             return { kind: 'success', text: 'Nothing to forget — this plugin never wrote a profile here.' }
           }
@@ -391,21 +442,16 @@ export function apply(ctx: Context, config: Config = {}) {
     disposers.push(commands.register({
       name: 'resume',
       description: 'Resume a session from another harness by list number, id, or title fragment. Hands the task over to this agent with full context.',
+      input: { hint: '<#|id|title fragment>' },
       handler: async (invocation) => {
-        const arg = (invocation.rawInput ?? '').replace(/^\/resume\b/, '').trim()
+        const arg = commandArg(invocation.rawInput, 'resume')
         if (!arg) return { kind: 'error', text: 'Usage: /resume <#|id|title fragment> — run /sessions first.' }
         try {
           const records = sessionCache ?? await refreshSessions()
           const record = findSession(records, arg)
           if (!record) return { kind: 'error', text: `No session matches "${arg}". Run /sessions to see what is resumable.` }
           const brief = buildHandoffBrief(record)
-          if (systemPrompt && typeof systemPrompt.context === 'function') {
-            disposers.push(systemPrompt.context!({
-              name: `resumed-task-${record.id}`,
-              order: config.resumeOrder ?? 15,
-              text: brief,
-            }))
-          }
+          injectResume(record.id, brief)
           return { kind: 'success', text: renderResumeReport(record, brief) }
         } catch (err) {
           return { kind: 'error', text: `Resume failed: ${err instanceof Error ? err.message : String(err)}` }
@@ -417,8 +463,7 @@ export function apply(ctx: Context, config: Config = {}) {
       name: 'my_profile',
       description: 'Show (or refresh with { refresh: true }) the user preference profile learned from other agent histories.',
       parameters: {
-        type: 'object',
-        properties: { refresh: { type: 'boolean', description: 'Re-scan transcripts and rebuild the profile.' } },
+        refresh: { type: 'boolean', description: 'Re-scan transcripts and rebuild the profile.' },
       },
       output: {
         schema: { type: 'string' },
@@ -439,7 +484,7 @@ export function apply(ctx: Context, config: Config = {}) {
     disposers.push(tools.register({
       name: 'my_commands',
       description: 'List slash commands migrated from other agent histories (with observation counts).',
-      parameters: { type: 'object', properties: {} },
+      parameters: {},
       output: {
         schema: { type: 'string' },
         render: (_args: unknown, value: unknown) => [{ type: 'text', text: String(value) }],
@@ -461,6 +506,9 @@ export function apply(ctx: Context, config: Config = {}) {
     }).catch(() => { /* no profile yet */ })
 
     return () => {
+      disposeProfile?.()
+      for (const dispose of resumeDisposers.values()) dispose()
+      resumeDisposers.clear()
       for (const dispose of disposers.reverse()) dispose()
     }
   })
