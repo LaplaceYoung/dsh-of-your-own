@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { commandArg, contributePrompt } from '../src/index.ts'
+import { commandArg, contributePrompt, PLUGIN_SECTION_ORDER } from '../src/index.ts'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
@@ -13,7 +13,7 @@ const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
   keywords?: string[]
 }
 
-describe('DSH 0.1.1+ bundle manifest', () => {
+describe('DSH 0.1.2+ bundle manifest', () => {
   it('declares dsh.bundle.patch so `dsh plugin add` joins the layer stack', () => {
     expect(pkg.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
     expect(pkg.files).toContain('cordis.patch.yml')
@@ -21,10 +21,20 @@ describe('DSH 0.1.1+ bundle manifest', () => {
   })
 
   it('declares an engines.dsh range that includes the current DSH train', () => {
-    expect(pkg.engines?.dsh).toBe('>=0.1.1-rc.2')
+    expect(pkg.engines?.dsh).toBe('>=0.1.2-alpha.1')
     expect(pkg.engines?.node).toMatch(/22/)
     expect(pkg.keywords).toContain('dsh-plugin')
     expect(pkg.dsh?.plugin?.displayName).toBe('dsh-of-your-own')
+  })
+
+  it('places prompt sections in the 0.1.2+ user-identity band', () => {
+    // After deployment:persona (0), before plan:policy (500). Adjacent
+    // first-party ranks differ by ≥10; our two sections keep that spacing.
+    expect(PLUGIN_SECTION_ORDER.USER_PREFERENCES).toBe(100)
+    expect(PLUGIN_SECTION_ORDER.RESUMED_TASK).toBe(110)
+    expect(PLUGIN_SECTION_ORDER.USER_PREFERENCES).toBeGreaterThan(0)
+    expect(PLUGIN_SECTION_ORDER.RESUMED_TASK).toBeLessThan(500)
+    expect(PLUGIN_SECTION_ORDER.RESUMED_TASK - PLUGIN_SECTION_ORDER.USER_PREFERENCES).toBe(10)
   })
 
   it('commandArg accepts both official tails and legacy full slash lines', () => {
@@ -45,7 +55,7 @@ describe('DSH 0.1.1+ bundle manifest', () => {
         seen.push(`context:${entry.name}`)
         return () => {}
       },
-    }, { name: 'user-preferences', order: 10, text: 'hi' })
+    }, { name: 'user-preferences', order: PLUGIN_SECTION_ORDER.USER_PREFERENCES, text: 'hi' })
     expect(seen).toEqual(['section:user-preferences'])
     dispose?.()
     expect(seen).toEqual(['section:user-preferences', 'disposed'])

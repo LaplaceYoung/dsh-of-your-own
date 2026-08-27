@@ -16,6 +16,9 @@
  * Re-runs upsert the managed block; user-authored content outside the block
  * is never touched. Re-injecting a same-named prompt contribution disposes
  * the previous one first — DSH 0.1.1+ rejects duplicate names in one layer.
+ * Section ranks sit in the 0.1.2+ user-identity band (after persona `0`,
+ * before `plan:policy` `500`) so they do not collide with the sparse
+ * first-party allocation.
  *
  * Seams used (all documented DSH extension points, no skeleton edits):
  *   - `ctx.commands`   — registers `/fuck`
@@ -97,13 +100,34 @@ export interface Config {
   maxPrompts?: number
   /** Per-memory-file content cap. */
   maxMemoryChars?: number
-  /** Order of the learned-preferences section in the system prompt. */
+  /**
+   * Order of the learned-preferences section in the system prompt.
+   * Default sits after `deployment:persona` (0) and before `plan:policy` (500).
+   */
   sectionOrder?: number
   /** Session listing caps. */
   maxSessionsPerSource?: number
-  /** Order of a resumed-task handoff block in the system prompt. */
+  /**
+   * Order of a resumed-task handoff block in the system prompt.
+   * Default sits immediately after the learned-preferences section.
+   */
   resumeOrder?: number
 }
+
+/**
+ * Sparse ranks for this plugin's durable prompt sections.
+ *
+ * DSH 0.1.2+ moved first-party sections onto `FIRST_PARTY_SECTION_ORDER`
+ * (identity −1000, persona 0, work modes 500+, tools 1000+). External
+ * plugins may use any finite order; equal orders sort by section name.
+ * These values occupy the user-identity band between persona and plan
+ * policy so learned preferences stay early and do not sit inside a
+ * first-party tool-guidance gap that later releases can close.
+ */
+export const PLUGIN_SECTION_ORDER = {
+  USER_PREFERENCES: 100,
+  RESUMED_TASK: 110,
+} as const
 
 /** Structural mirror of the DSH command service (0.1.1+ `input.hint`). */
 export interface CommandsService {
@@ -336,7 +360,7 @@ export function apply(ctx: Context, config: Config = {}) {
       disposeProfile?.()
       disposeProfile = contributePrompt(systemPrompt, {
         name: 'user-preferences',
-        order: config.sectionOrder ?? 10,
+        order: config.sectionOrder ?? PLUGIN_SECTION_ORDER.USER_PREFERENCES,
         text: renderProfileSection(profile),
       })
     }
@@ -345,7 +369,7 @@ export function apply(ctx: Context, config: Config = {}) {
       resumeDisposers.get(id)?.()
       const dispose = contributePrompt(systemPrompt, {
         name: `resumed-task-${id}`,
-        order: config.resumeOrder ?? 15,
+        order: config.resumeOrder ?? PLUGIN_SECTION_ORDER.RESUMED_TASK,
         text: brief,
       })
       if (dispose) resumeDisposers.set(id, dispose)

@@ -11,3 +11,5 @@
       #   maxFilesPerSource: 50         # newest transcripts scanned per harness
       #   maxBytesPerFile: 524288       # per-file read cap
       #   profilePath: ~/.dsh/of-your-own/profile.json
+      #   sectionOrder: 100             # after persona (0), before plan:policy (500)
+      #   resumeOrder: 110              # immediately after learned preferences

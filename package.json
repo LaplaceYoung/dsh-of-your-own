@@ -1,6 +1,6 @@
 {
   "name": "@dsh-external/dsh-of-your-own",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "/fuck — read your Claude Code & Codex conversation history in parallel, analyze your preferences and tool habits, migrate them into DSH as a persisted profile, and keep remembering them.",
   "private": true,
   "type": "module",
@@ -38,7 +38,7 @@
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0",
-    "dsh": ">=0.1.1-rc.2"
+    "dsh": ">=0.1.2-alpha.1"
   },
   "dsh": {
     "bundle": {
