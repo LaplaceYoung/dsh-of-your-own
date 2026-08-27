@@ -7,9 +7,9 @@ import { MemFs } from './memfs.ts'
 /** Minimal `ctx.commands` stub modeled on DSH's command registry. */
 class CommandsStub extends Service {
   static inject: string[] = []
-  registry = new Map<string, { description: string; handler: (inv: { rawInput: string }) => Promise<{ kind: string; text: string }> }>()
+  registry = new Map<string, { name: string; description: string; input?: { hint?: string }; handler: (inv: { rawInput: string }) => Promise<{ kind: string; text: string }> }>()
   constructor(ctx: Context) { super(ctx, 'commands') }
-  register(def: { name: string; description: string; handler: (inv: { rawInput: string }) => Promise<{ kind: string; text: string }> }): () => void {
+  register(def: { name: string; description: string; input?: { hint?: string }; handler: (inv: { rawInput: string }) => Promise<{ kind: string; text: string }> }): () => void {
     this.registry.set(def.name, def)
     return () => { this.registry.delete(def.name) }
   }
@@ -18,7 +18,7 @@ class CommandsStub extends Service {
 /** Minimal `ctx.tools` stub modeled on DSH's tools registry. */
 class ToolsStub extends Service {
   static inject: string[] = []
-  registry = new Map<string, { execute(args: unknown): Promise<unknown> }>()
+  registry = new Map<string, { name: string; parameters?: Record<string, unknown>; execute(args: unknown): Promise<unknown> }>()
   constructor(ctx: Context) { super(ctx, 'tools') }
   register(def: { name: string } & Record<string, unknown>): () => void {
     this.registry.set(def.name, def as never)
@@ -26,14 +26,20 @@ class ToolsStub extends Service {
   }
 }
 
-/** Minimal `ctx.systemPrompt` stub capturing context() sections. */
+/** Minimal `ctx.systemPrompt` stub: `section` is the 0.1.1+ seam; `context` remains as fallback. */
 class SystemPromptStub extends Service {
   static inject: string[] = []
   injected: { name: string; order: number; text: string }[] = []
   constructor(ctx: Context) { super(ctx, 'systemPrompt') }
-  context(entry: { name: string; order: number; text: string }): () => void {
+  section(entry: { name: string; order: number; text: string }): () => void {
     this.injected.push(entry)
-    return () => {}
+    return () => {
+      const i = this.injected.indexOf(entry)
+      if (i >= 0) this.injected.splice(i, 1)
+    }
+  }
+  context(entry: { name: string; order: number; text: string }): () => void {
+    return this.section(entry)
   }
 }
 
@@ -336,6 +342,40 @@ describe('@dsh-external/dsh-of-your-own plugin', () => {
     expect(miss.text).toContain('No session matches')
   })
 
+  it('registers /resume with an input hint and flattened tool parameters', async () => {
+    const { ctx } = await boot()
+    await ctx.plugin(plugin, config)
+    const commands = ctx.get('commands') as unknown as CommandsStub
+    const tools = ctx.get('tools') as unknown as ToolsStub
+    expect(commands.registry.get('resume')?.input).toEqual({ hint: '<#|id|title fragment>' })
+    expect(tools.registry.get('my_profile')?.parameters).toEqual({
+      refresh: { type: 'boolean', description: 'Re-scan transcripts and rebuild the profile.' },
+    })
+    expect(tools.registry.get('my_commands')?.parameters).toEqual({})
+  })
+
+  it('replaces the user-preferences section on re-run instead of duplicating the name', async () => {
+    const { ctx } = await boot()
+    await ctx.plugin(plugin, config)
+    const commands = ctx.get('commands') as unknown as CommandsStub
+    const sp = ctx.get('systemPrompt') as unknown as SystemPromptStub
+    await commands.registry.get('fuck')!.handler({ rawInput: '/fuck' })
+    await commands.registry.get('fuck')!.handler({ rawInput: '/fuck' })
+    expect(sp.injected.filter(e => e.name === 'user-preferences')).toHaveLength(1)
+  })
+
+  it('accepts both official argument-tail rawInput and a full /resume line', async () => {
+    const { ctx } = await boot()
+    await ctx.plugin(plugin, config)
+    const commands = ctx.get('commands') as unknown as CommandsStub
+    const byTail = await commands.registry.get('resume')!.handler({ rawInput: '1' })
+    expect(byTail.kind).toBe('success')
+    expect(byTail.text).toContain('claude-code')
+    const byLine = await commands.registry.get('resume')!.handler({ rawInput: '/resume cx-1' })
+    expect(byLine.kind).toBe('success')
+    expect(byLine.text).toContain('codex session `cx-1`')
+  })
+
   it('/forget erases the managed block and the store', async () => {
     const { ctx, fs } = await boot()
     await ctx.plugin(plugin, config)
@@ -355,5 +395,16 @@ describe('@dsh-external/dsh-of-your-own plugin', () => {
     // Idempotent second run.
     const again = await commands.registry.get('forget')!.handler({ rawInput: '/forget' })
     expect(again.text).toContain('Nothing to forget')
+  })
+
+  it('/forget also drops the in-session prompt section', async () => {
+    const { ctx } = await boot()
+    await ctx.plugin(plugin, config)
+    const commands = ctx.get('commands') as unknown as CommandsStub
+    const sp = ctx.get('systemPrompt') as unknown as SystemPromptStub
+    await commands.registry.get('fuck')!.handler({ rawInput: '/fuck' })
+    expect(sp.injected.some(e => e.name === 'user-preferences')).toBe(true)
+    await commands.registry.get('forget')!.handler({ rawInput: '/forget' })
+    expect(sp.injected.some(e => e.name === 'user-preferences')).toBe(false)
   })
 })

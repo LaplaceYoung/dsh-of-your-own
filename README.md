@@ -4,9 +4,9 @@
 
 **Your other agents raised you. DSH just got custody.**
 
-[![tests](https://img.shields.io/badge/tests-95%2F95-3FB950?style=flat-square&labelColor=black)](tests)
+[![tests](https://img.shields.io/badge/tests-99%2F99-3FB950?style=flat-square&labelColor=black)](tests)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&labelColor=black&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![protocol](https://img.shields.io/badge/protocol-cordis-orange?style=flat-square&labelColor=black)](https://github.com/deepseek-ai/deepseek-harness)
+[![dsh](https://img.shields.io/badge/dsh-0.1.1--rc.2-orange?style=flat-square&labelColor=black)](https://github.com/deepseek-ai/deepseek-harness)
 [![license](https://img.shields.io/badge/license-MIT-white?style=flat-square&labelColor=black)](LICENSE)
 
 [English](README.md) | [简体中文](README.zh-CN.md)
@@ -50,7 +50,7 @@ Every agent starts with amnesia. You re-teach the same preferences, the same too
   └─ migrate natively
       1. Managed block → ~/.dsh/AGENTS.md   ← DSH auto-loads this EVERY session. No plugin needed afterwards.
       2. profile.json  → ~/.dsh/of-your-own/
-      3. systemPrompt.context() injection   ← remembered this session too
+      3. systemPrompt.section() injection  ← remembered this session too
 ```
 
 **The migration is native.** Your preferences land in `~/.dsh/AGENTS.md` — the user-global instruction file DSH's workspace-context reads on boot, the same mechanism every other instruction file uses. Uninstall the plugin tomorrow; the memory stays.
@@ -70,26 +70,46 @@ Every agent starts with amnesia. You re-teach the same preferences, the same too
 
 ## Installation
 
+Requires [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) `>=0.1.1-rc.2` (the package declares `dsh.bundle` so `dsh plugin add` actually joins the layer stack).
+
 ```bash
+# from a local checkout
 git clone https://github.com/LaplaceYoung/dsh-of-your-own.git
 cd dsh-of-your-own
 pnpm install
 pnpm build
+dsh plugin --profile web add "$(pwd)"
 ```
 
-Mount it in your DSH composition (`cordis.yml`):
+```bash
+# or straight from GitHub (pnpm ≥10 must allow the prepare/build script)
+dsh plugin --profile web add github:LaplaceYoung/dsh-of-your-own
+```
+
+If the git install is refused, copy the package key pnpm printed into that profile's `pnpm-workspace.yaml`:
+
+```yaml
+allowBuilds:
+  '@dsh-external/dsh-of-your-own': true
+```
+
+and re-run the `add`. Then confirm the layer is in the composed tree:
+
+```bash
+dsh --profile web --dump-config   # look for "# == @dsh-external/dsh-of-your-own"
+```
+
+Override knobs from the profile's own `cordis.patch.yml` (later layers replace the whole row — restate every key you still want):
 
 ```yaml
 - id: dsh-of-your-own
   name: '@dsh-external/dsh-of-your-own'
-  # config:
-  #   provider: deepseek-official   # LLM preference synthesis (optional — template fallback otherwise)
-  #   model: deepseek-v4-flash
-  #   maxFilesPerSource: 50         # newest N transcripts scanned per harness
-  #   agentsMdPath: ~/.dsh/AGENTS.md  # native landing zone
+  config:
+    provider: deepseek-official   # LLM preference synthesis (optional — template fallback otherwise)
+    model: deepseek-v4-flash
+    maxFilesPerSource: 50         # newest N transcripts scanned per harness
+    agentsMdPath: ~/.dsh/AGENTS.md  # native landing zone
 ```
-
-Or apply [`cordis.patch.yml`](cordis.patch.yml) and call it a day.
 
 ## Usage
 
@@ -176,14 +196,14 @@ then install it and run /fuck on my machine.
 
 - **Native, not bolt-on** — the migration target is `$DSH_HOME/AGENTS.md`, the user-global instruction file DSH's workspace-context package loads every session. No plugin mounted, memory still there.
 - **Idempotent & respectful** — the managed block is fenced by `<!-- dsh-of-your-own:begin/end -->` markers; re-runs replace the block in place, and anything you wrote outside it is never touched.
-- **Seams, not surgery** — documented cordis extension points only: `ctx.commands`, `ctx.tools`, `ctx.systemPrompt.context()`, optional `ctx.llm` / `ctx.fs`. No skeleton patches, no hot-path tax.
+- **Seams, not surgery** — documented cordis extension points only: `ctx.commands`, `ctx.tools`, `ctx.systemPrompt.section()` (falls back to `context()`), optional `ctx.llm` / `ctx.fs`. No skeleton patches, no hot-path tax.
 - **No key required** — preference synthesis degrades to a deterministic template; the deterministic layer (frequencies, language, migration) never needs an LLM.
 - **Privacy** — your transcripts are read locally and reduced to statistics + a preference summary on disk. Nothing is uploaded anywhere.
 
 ## Development
 
 ```bash
-pnpm test        # 95 tests across 6 specs — parsers, sessions, report, analysis, persistence, plugin integration
+pnpm test        # 99 tests across 7 specs — parsers, sessions, report, analysis, persistence, plugin integration, DSH manifest
 pnpm typecheck   # tsc --noEmit
 pnpm build       # tsc → lib/
 ```
@@ -197,7 +217,7 @@ src/
   sessions.ts  # session takeover: transcript → resumable records + handoff briefs
   report.ts    # the tsundere verdict: ranks, tool schools, rhythm histogram, LLM-written closer
   index.ts     # plugin entry: /fuck, /sessions, /resume, my_profile, my_commands, boot-time recall
-tests/         # vitest: parsers, sessions, report, analyze, store, plugin integration
+tests/         # vitest: parsers, sessions, report, analyze, store, plugin integration, DSH manifest
 ```
 
 ## License

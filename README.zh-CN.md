@@ -4,9 +4,9 @@
 
 **别的 agent 把你养大的。DSH 只是接过了抚养权。**
 
-[![tests](https://img.shields.io/badge/tests-95%2F95-3FB950?style=flat-square&labelColor=black)](tests)
+[![tests](https://img.shields.io/badge/tests-99%2F99-3FB950?style=flat-square&labelColor=black)](tests)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&labelColor=black&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![protocol](https://img.shields.io/badge/protocol-cordis-orange?style=flat-square&labelColor=black)](https://github.com/deepseek-ai/deepseek-harness)
+[![dsh](https://img.shields.io/badge/dsh-0.1.1--rc.2-orange?style=flat-square&labelColor=black)](https://github.com/deepseek-ai/deepseek-harness)
 [![license](https://img.shields.io/badge/license-MIT-white?style=flat-square&labelColor=black)](LICENSE)
 
 [English](README.md) | [简体中文](README.zh-CN.md)
@@ -50,7 +50,7 @@
   └─ 原生迁移
       1. 托管块 → ~/.dsh/AGENTS.md   ← DSH 每次会话自动加载。卸载插件后依然记得你。
       2. profile.json → ~/.dsh/of-your-own/
-      3. systemPrompt.context() 注入 ← 本会话立刻生效
+      3. systemPrompt.section() 注入 ← 本会话立刻生效
 ```
 
 **迁移是原生的。** 你的偏好落进 `~/.dsh/AGENTS.md`——DSH workspace-context 开机就加载的用户全局指令文件，和其他指令文件走同一条加载通道。明天卸载这个插件，记忆还在。
@@ -70,26 +70,46 @@
 
 ## 安装
 
+需要 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) `>=0.1.1-rc.2`（包里声明了 `dsh.bundle`，`dsh plugin add` 才会把这一层真正编进配置树）。
+
 ```bash
+# 本地检出
 git clone https://github.com/LaplaceYoung/dsh-of-your-own.git
 cd dsh-of-your-own
 pnpm install
 pnpm build
+dsh plugin --profile web add "$(pwd)"
 ```
 
-挂载到 DSH 组合（`cordis.yml`）：
+```bash
+# 或者直接从 GitHub 装（pnpm ≥10 必须放行 prepare/build 脚本）
+dsh plugin --profile web add github:LaplaceYoung/dsh-of-your-own
+```
+
+如果 git 安装被拒绝，把 pnpm 打印的包名写进该 profile 的 `pnpm-workspace.yaml`：
+
+```yaml
+allowBuilds:
+  '@dsh-external/dsh-of-your-own': true
+```
+
+再跑一遍 `add`。然后确认层已经在组合树里：
+
+```bash
+dsh --profile web --dump-config   # 找 "# == @dsh-external/dsh-of-your-own"
+```
+
+用 profile 自己的 `cordis.patch.yml` 覆盖旋钮（后层整行替换，想保留的 key 都得重写）：
 
 ```yaml
 - id: dsh-of-your-own
   name: '@dsh-external/dsh-of-your-own'
-  # config:
-  #   provider: deepseek-official   # LLM 偏好综合（可选——缺省走确定性模板）
-  #   model: deepseek-v4-flash
-  #   maxFilesPerSource: 50         # 每个 harness 扫最新的 N 份会话
-  #   agentsMdPath: ~/.dsh/AGENTS.md  # 原生落点
+  config:
+    provider: deepseek-official   # LLM 偏好综合（可选——缺省走确定性模板）
+    model: deepseek-v4-flash
+    maxFilesPerSource: 50         # 每个 harness 扫最新的 N 份会话
+    agentsMdPath: ~/.dsh/AGENTS.md  # 原生落点
 ```
-
-或者应用 [`cordis.patch.yml`](cordis.patch.yml)，收工。
 
 ## 用法
 
@@ -171,14 +191,14 @@ pnpm build
 
 - **原生，不是外挂** — 迁移目标是 `$DSH_HOME/AGENTS.md`，DSH workspace-context 包每次会话都会加载的用户全局指令文件。不挂这个插件，记忆也在。
 - **幂等且克制** — 托管块用 `<!-- dsh-of-your-own:begin/end -->` 标记围栏；重跑原地替换，块外你写的内容永远不动。
-- **接缝，不是手术** — 只用文档化的 cordis 扩展点：`ctx.commands`、`ctx.tools`、`ctx.systemPrompt.context()`，可选 `ctx.llm` / `ctx.fs`。不打骨架补丁，不加热路径开销。
+- **接缝，不是手术** — 只用文档化的 cordis 扩展点：`ctx.commands`、`ctx.tools`、`ctx.systemPrompt.section()`（旧宿主回退 `context()`），可选 `ctx.llm` / `ctx.fs`。不打骨架补丁，不加热路径开销。
 - **不需要 key** — 偏好综合缺省退化为确定性模板；统计层（频率、语言、迁移）永远不需要 LLM。
 - **隐私** — 对话记录在本机读取、降维成统计和偏好摘要后落盘。不上传任何地方。
 
 ## 开发
 
 ```bash
-pnpm test        # 95 个测试，6 个 spec——解析器、会话接管、鉴定报告、分析、持久化、插件集成
+pnpm test        # 99 个测试，7 个 spec——解析器、会话接管、鉴定报告、分析、持久化、插件集成、DSH 清单
 pnpm typecheck   # tsc --noEmit
 pnpm build       # tsc → lib/
 ```
@@ -192,7 +212,7 @@ src/
   sessions.ts  # 会话接管：transcript → 可续跑会话记录 + 交接简报
   report.ts    # 傲娇鉴定报告：等级、修炼流派、作息直方图、LLM 撰写结语
   index.ts     # 插件入口：/fuck、/sessions、/resume、my_profile、my_commands、启动时记忆回读
-tests/         # vitest：解析器、会话、鉴定报告、分析、持久化、插件集成
+tests/         # vitest：解析器、会话、鉴定报告、分析、持久化、插件集成、DSH 清单
 ```
 
 ## License
